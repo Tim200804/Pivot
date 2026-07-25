@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
       proxy: isReal
         ? {
             '/api': {
-              target: 'http://localhost:5000',
+              target: 'http://localhost:5001',
               changeOrigin: true,
             },
           }
