@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Mail, Lock, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, Mail, Lock, CheckCircle2, Loader2 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
+import { isMockMode } from '../../config/api'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -17,16 +18,21 @@ export default function SignInForm({ role, sport, savedForRole }) {
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const navigate = useNavigate()
   const { login, findSavedProfile } = useUser()
 
   const handleQuickLogin = (profile) => {
-    login(profile, true)
-    navigate(profile.role === 'athlete' ? '/athlete/onboarding' : '/coach')
+    if (isMockMode()) {
+      login(profile, true)
+      navigate(profile.role === 'athlete' ? '/athlete/onboarding' : '/coach')
+    } else {
+      setError('Quick login is only available in mock mode')
+    }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
@@ -35,27 +41,45 @@ export default function SignInForm({ role, sport, savedForRole }) {
       return
     }
 
-    const saved = findSavedProfile(email.trim())
-    if (saved) {
-      login(saved, remember)
-    } else {
-      const displayName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      const demoUser = {
-        role,
-        sport,
-        school: 'University of Pennsylvania',
-        teamName: sport === 'rowing' ? 'Varsity Heavyweight 8+' : 'Men\'s Varsity Basketball',
-        name: displayName,
-        email: email.trim(),
-        position: role === 'athlete' ? (sport === 'rowing' ? 'Stroke Seat' : 'Point Guard (PG)') : undefined,
-        height: role === 'athlete' ? 188 : undefined,
-        weight: role === 'athlete' ? 82 : undefined,
-        coachRole: role === 'coach' ? 'Head Coach' : undefined,
+    if (isMockMode()) {
+      const saved = findSavedProfile(email.trim())
+      if (saved) {
+        login(saved, remember)
+      } else {
+        const displayName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        const demoUser = {
+          role,
+          sport,
+          school: 'University of Pennsylvania',
+          teamName: sport === 'rowing' ? 'Varsity Heavyweight 8+' : 'Men\'s Varsity Basketball',
+          name: displayName,
+          email: email.trim(),
+          position: role === 'athlete' ? (sport === 'rowing' ? 'Stroke Seat' : 'Point Guard (PG)') : undefined,
+          height: role === 'athlete' ? 188 : undefined,
+          weight: role === 'athlete' ? 82 : undefined,
+          coachRole: role === 'coach' ? 'Head Coach' : undefined,
+        }
+        login(demoUser, remember)
       }
-      login(demoUser, remember)
+      navigate(role === 'athlete' ? '/athlete/onboarding' : '/coach')
+      return
     }
 
-    navigate(role === 'athlete' ? '/athlete/onboarding' : '/coach')
+    // Real mode
+    if (!password) {
+      setError('Please enter your password')
+      return
+    }
+
+    setIsSubmitting(true)
+    const result = await login({ email: email.trim(), password })
+    setIsSubmitting(false)
+
+    if (result.success) {
+      navigate(result.user?.role === 'athlete' ? '/athlete/onboarding' : '/coach')
+    } else {
+      setError(result.message || 'Login failed')
+    }
   }
 
   const gradient = role === 'athlete'
@@ -64,7 +88,7 @@ export default function SignInForm({ role, sport, savedForRole }) {
 
   return (
     <motion.form key="signin" {...fadeUp} onSubmit={handleSubmit} className="space-y-5">
-      {savedForRole.length > 0 && (
+      {isMockMode() && savedForRole.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-pivot-400 dark:text-slate-500 uppercase tracking-wider">
             Previously saved
@@ -125,15 +149,18 @@ export default function SignInForm({ role, sport, savedForRole }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Password</label>
+        <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
+          Password {isMockMode() && <span className="text-pivot-400 font-normal">(any password works)</span>}
+        </label>
         <div className="relative">
           <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-pivot-400 pointer-events-none" />
           <input
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => { setPassword(e.target.value); setError('') }}
             placeholder="Enter password"
             className={`${glassInput} pl-10`}
+            required
           />
         </div>
       </div>
@@ -157,15 +184,18 @@ export default function SignInForm({ role, sport, savedForRole }) {
 
       <button
         type="submit"
-        className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+        disabled={isSubmitting}
+        className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
         style={{ background: gradient }}
       >
-        Sign In
-        <ArrowRight size={16} />
+        {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+        {isSubmitting ? 'Signing in...' : 'Sign In'}
       </button>
 
       <p className="text-center text-xs text-pivot-400 dark:text-slate-500">
-        Demo mode — any password works. Saved accounts are stored on this device.
+        {isMockMode()
+          ? 'Demo mode — any password works. Saved accounts are stored on this device.'
+          : 'Real mode — connected to Flask backend.'}
       </p>
     </motion.form>
   )

@@ -4,8 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode mock",
+    "dev:mock": "vite --mode mock",
+    "dev:real": "vite --mode real",
     "build": "vite build",
+    "build:mock": "vite build --mode mock",
+    "build:real": "vite build --mode real",
     "preview": "vite preview"
   },
   "dependencies": {

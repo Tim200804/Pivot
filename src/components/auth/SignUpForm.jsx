@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, ShipWheel, Dumbbell, Search, GraduationCap, Users, Ruler, Weight, ChevronDown, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, ShipWheel, Dumbbell, Search, GraduationCap, Users, Ruler, Weight, ChevronDown, CheckCircle2, Lock, Loader2 } from 'lucide-react'
 import { useUser, COACH_ROLES } from '../../context/UserContext'
+import { isMockMode } from '../../config/api'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -25,13 +26,17 @@ export default function SignUpForm({ role, sport, setSport }) {
   const [weight, setWeight] = useState('')
   const [coachRole, setCoachRole] = useState('')
   const [showCoachRolePicker, setShowCoachRolePicker] = useState(false)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [remember, setRemember] = useState(true)
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const schoolRef = useRef(null)
   const positionRef = useRef(null)
   const coachRoleRef = useRef(null)
   const navigate = useNavigate()
-  const { login, getPositionsForSport, getSchoolsForSport } = useUser()
+  const { login, register, getPositionsForSport, getSchoolsForSport } = useUser()
 
   useEffect(() => {
     const handler = (e) => {
@@ -51,8 +56,11 @@ export default function SignUpForm({ role, sport, setSport }) {
 
   const isFormValid = useMemo(() => {
     const base = school && teamName && name && email
-    return role === 'athlete' ? base && position && height && weight : base && coachRole
-  }, [role, school, teamName, name, email, position, height, weight, coachRole])
+    const hasPassword = !isMockMode() ? password.length >= 6 && password === confirmPassword : true
+    return role === 'athlete'
+      ? base && position && height && weight && hasPassword
+      : base && coachRole && hasPassword
+  }, [role, school, teamName, name, email, position, height, weight, coachRole, password, confirmPassword])
 
   const handleSportChange = (newSport) => {
     setSport(newSport)
@@ -61,13 +69,40 @@ export default function SignUpForm({ role, sport, setSport }) {
     setSchoolSearch('')
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
+
+    if (!isMockMode()) {
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters')
+        return
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match')
+        return
+      }
+    }
+
     const userData = role === 'athlete'
-      ? { role, sport, school, teamName, name, email, position, height: parseFloat(height), weight: parseFloat(weight) }
-      : { role, sport, school, teamName, name, email, coachRole }
-    login(userData, remember)
-    navigate(role === 'athlete' ? '/athlete/onboarding' : '/coach')
+      ? { role, sport, school, teamName, name, email, position, height: parseFloat(height), weight: parseFloat(weight), password }
+      : { role, sport, school, teamName, name, email, coachRole, password }
+
+    if (isMockMode()) {
+      login(userData, remember)
+      navigate(role === 'athlete' ? '/athlete/onboarding' : '/coach')
+      return
+    }
+
+    setIsSubmitting(true)
+    const result = await register(userData, remember)
+    setIsSubmitting(false)
+
+    if (result.success) {
+      navigate(result.user?.role === 'athlete' ? '/athlete/onboarding' : '/coach')
+    } else {
+      setError(result.message || 'Registration failed')
+    }
   }
 
   const isAthlete = role === 'athlete'
@@ -127,6 +162,22 @@ export default function SignUpForm({ role, sport, setSport }) {
         )}
       </div>
 
+      {!isMockMode() && (
+        <div className="space-y-4 pt-1">
+          <div className="flex items-center gap-2 text-xs font-semibold text-pivot-400 dark:text-slate-500 uppercase tracking-wider"><Lock size={14} /> Security</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Password <span className="text-red-400">*</span></label>
+              <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} placeholder="Min 6 characters" minLength={6} className={glassInput} required={!isMockMode()} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Confirm Password <span className="text-red-400">*</span></label>
+              <input type="password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError('') }} placeholder="Repeat password" className={glassInput} required={!isMockMode()} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {isAthlete && (
         <div className="space-y-4 pt-1">
           <div className="flex items-center gap-2 text-xs font-semibold text-pivot-400 dark:text-slate-500 uppercase tracking-wider"><Ruler size={14} /> Physical Profile</div>
@@ -154,12 +205,18 @@ export default function SignUpForm({ role, sport, setSport }) {
         <span className="text-sm text-pivot-600 dark:text-slate-400">Remember me</span>
       </label>
 
-      <button type="submit" disabled={!isFormValid} className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100" style={{ background: isFormValid ? gradient : undefined }}>
-        Create Account
-        <ArrowRight size={16} />
+      {error && <p className="text-sm text-red-500 font-medium">{error}</p>}
+
+      <button type="submit" disabled={!isFormValid || isSubmitting} className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100" style={{ background: isFormValid ? gradient : undefined }}>
+        {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+        {isSubmitting ? 'Creating Account...' : 'Create Account'}
       </button>
 
-      <p className="text-center text-xs text-pivot-400 dark:text-slate-500">Demo mode — your profile will be saved on this device.</p>
+      <p className="text-center text-xs text-pivot-400 dark:text-slate-500">
+        {isMockMode()
+          ? 'Demo mode — your profile will be saved on this device.'
+          : 'Real mode — account will be stored in the backend database.'}
+      </p>
     </motion.form>
   )
 }

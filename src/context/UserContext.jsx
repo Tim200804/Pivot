@@ -1,8 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { isMockMode, apiLogin, apiRegister } from '../config/api'
 
 const UserContext = createContext(null)
 
 const STORAGE_KEY = 'pivot_saved_users'
+const TOKEN_KEY = 'pivot_token'
 
 const ROWING_POSITIONS = [
   'Stroke Seat', '7 Seat', '6 Seat', '5 Seat', '4 Seat',
@@ -72,7 +74,6 @@ const COACH_ROLES = [
   'Performance Analyst',
 ]
 
-// Load saved profiles from localStorage
 function loadSavedProfiles() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -86,25 +87,40 @@ function saveProfiles(profiles) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles))
   } catch {
-    // localStorage full or unavailable — silently ignore
+    // localStorage full or unavailable
+  }
+}
+
+function loadToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+function saveToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // ignore
   }
 }
 
 export function UserProvider({ children }) {
   const [user, setUser] = useState(null)
   const [savedProfiles, setSavedProfiles] = useState(loadSavedProfiles)
+  const [loading, setLoading] = useState(false)
 
-  // Sync savedProfiles to localStorage whenever it changes
   useEffect(() => {
     saveProfiles(savedProfiles)
   }, [savedProfiles])
 
-  const login = useCallback((data, rememberMe = false) => {
+  const mockLogin = useCallback((data, rememberMe = false) => {
     setUser(data)
-
     if (rememberMe) {
       setSavedProfiles(prev => {
-        // Replace existing profile with same email, or append
         const existing = prev.findIndex(p => p.email === data.email)
         const profile = { ...data, savedAt: Date.now() }
         if (existing >= 0) {
@@ -117,9 +133,64 @@ export function UserProvider({ children }) {
     }
   }, [])
 
+  const realLogin = useCallback(async (credentials) => {
+    setLoading(true)
+    try {
+      const res = await apiLogin(credentials)
+      if (res.success && res.token) {
+        saveToken(res.token)
+        setUser(res.user)
+        return { success: true, user: res.user }
+      }
+      return { success: false, message: res.message || 'Login failed' }
+    } catch (err) {
+      return { success: false, message: err.message || 'Network error' }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const login = useCallback(async (data, rememberMe = false) => {
+    if (isMockMode()) {
+      mockLogin(data, rememberMe)
+      return { success: true }
+    }
+    // Real mode: data should contain email + password
+    return realLogin(data)
+  }, [mockLogin, realLogin])
+
+  const mockRegister = useCallback((data, rememberMe = false) => {
+    mockLogin(data, rememberMe)
+    return { success: true }
+  }, [mockLogin])
+
+  const realRegister = useCallback(async (userData) => {
+    setLoading(true)
+    try {
+      const res = await apiRegister(userData)
+      if (res.success && res.token) {
+        saveToken(res.token)
+        setUser(res.user)
+        return { success: true, user: res.user }
+      }
+      return { success: false, message: res.message || 'Registration failed' }
+    } catch (err) {
+      return { success: false, message: err.message || 'Network error' }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const register = useCallback(async (data, rememberMe = false) => {
+    if (isMockMode()) {
+      return mockRegister(data, rememberMe)
+    }
+    return realRegister(data)
+  }, [mockRegister, realRegister])
+
   const logout = useCallback(() => {
     setUser(null)
-    // Don't remove from savedProfiles — just clear current session
+    saveToken(null)
   }, [])
 
   const forgetProfile = useCallback((email) => {
@@ -149,7 +220,8 @@ export function UserProvider({ children }) {
   }
 
   const value = {
-    user, login, logout, forgetProfile, findSavedProfile, savedProfiles,
+    user, login, logout, register, forgetProfile, findSavedProfile, savedProfiles,
+    loading, isMockMode,
     getPositionsForSport, getSchoolsForSport, COACH_ROLES,
   }
 
