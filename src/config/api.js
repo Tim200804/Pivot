@@ -6,13 +6,27 @@
  * Switch mode via VITE_AUTH_MODE env variable:
  *   VITE_AUTH_MODE=mock   -> npm run dev:mock
  *   VITE_AUTH_MODE=real   -> npm run dev:real
+ *
+ * Online deployment: set your Render backend URL in localStorage:
+ *   localStorage.setItem('pivot_api_url', 'https://your-app.onrender.com')
  */
 
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'mock'
 
-// In dev with proxy, use relative path. In prod or direct backend, use full URL.
-const isDev = import.meta.env.DEV
-const API_BASE_URL = isDev ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:5000')
+// Priority: 1) localStorage override  2) env var  3) dev proxy  4) localhost fallback
+function getApiBaseUrl() {
+  const lsUrl = localStorage.getItem('pivot_api_url')
+  if (lsUrl) return lsUrl
+
+  const envUrl = import.meta.env.VITE_API_URL
+  if (envUrl) return envUrl
+
+  if (import.meta.env.DEV) return '' // dev proxy
+
+  return 'http://localhost:5001'
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 export const isMockMode = () => AUTH_MODE === 'mock'
 export const isRealMode = () => AUTH_MODE === 'real'
