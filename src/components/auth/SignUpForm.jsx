@@ -209,7 +209,7 @@ export default function SignUpForm({ role, sport, setSport }) {
 
       {error && <p className="text-sm text-red-500 font-medium">{error}</p>}
 
-      <button type="submit" disabled={!isFormValid || isSubmitting} className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100" style={{ background: isFormValid ? gradient : undefined }}>
+      <button type="submit" disabled={!isFormValid || isSubmitting} className={`w-full py-3.5 rounded-2xl font-semibold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 ${isFormValid ? '' : 'bg-pivot-300 dark:bg-slate-600'}`} style={isFormValid ? { background: gradient } : undefined}>
         {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
         {isSubmitting ? 'Creating Account...' : 'Create Account'}
       </button>
