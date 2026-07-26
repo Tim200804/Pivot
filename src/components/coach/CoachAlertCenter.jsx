@@ -146,7 +146,7 @@ export default function CoachAlertCenter() {
                     className={`glass-card p-4 border-l-4 relative ${
                       alert.level === 'black' ? 'border-l-slate-800 dark:border-l-slate-300' :
                       alert.level === 'red' ? 'border-l-rose-500' : 'border-l-amber-500'
-                    }`}
+                    } ${actionMenu === i ? 'z-30' : 'z-0'}`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3">
