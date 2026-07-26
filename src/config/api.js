@@ -23,7 +23,7 @@ export function getApiBaseUrl() {
 
   if (import.meta.env.DEV) return '' // dev proxy
 
-  return 'http://localhost:5001'
+  return 'https://web-production-98008.up.railway.app'
 }
 
 export function setApiBaseUrl(url) {
