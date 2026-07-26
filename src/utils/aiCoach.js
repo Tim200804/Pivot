@@ -1,11 +1,9 @@
 // AI Coach — Personalized psychological insight + chat with memory
 // Uses athlete's 7-day data + today's check-in + conversation history
 
-// Check if API key is configured
-const AI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || ''
-const AI_API_BASE = import.meta.env.VITE_OPENAI_API_BASE || 'https://api.openai.com/v1'
-const AI_MODEL = import.meta.env.VITE_AI_MODEL || 'gpt-4o-mini'
-const IS_DEMO_MODE = !AI_API_KEY
+import { apiFetch, isMockMode } from '../config/api'
+
+const IS_DEMO_MODE = isMockMode()
 
 const STORAGE_KEY = 'pivot_ai_chat_history'
 
@@ -65,31 +63,14 @@ Use "you" language. Be human, not robotic. Keep it under 60 words.`
  * Generate insight using AI API
  */
 async function generateAIInsight(athlete, checkin) {
-  const prompt = buildInsightPrompt(athlete, checkin)
-
   try {
-    const response = await fetch(`${AI_API_BASE}/chat/completions`, {
+    const data = await apiFetch('/api/ai/insight', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          { role: 'system', content: buildSystemPrompt() },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 150,
-        temperature: 0.7,
-      }),
+      body: JSON.stringify({ athlete, checkin }),
     })
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`)
-    const data = await response.json()
-    return data.choices[0].message.content.trim()
+    return data.text
   } catch (error) {
-    console.warn('AI API failed, using fallback:', error.message)
+    console.warn('AI insight backend failed, using fallback:', error.message)
     return null
   }
 }
@@ -98,34 +79,14 @@ async function generateAIInsight(athlete, checkin) {
  * Generate a chat response using AI API, with full conversation history
  */
 async function generateAIChatResponse(athlete, checkin, messages) {
-  const dataSummary = buildDataSummary(athlete, checkin)
-
-  const apiMessages = [
-    { role: 'system', content: buildSystemPrompt() },
-    { role: 'system', content: `Athlete context:\n${dataSummary}` },
-    ...messages.map(m => ({ role: m.role, content: m.text }))
-  ]
-
   try {
-    const response = await fetch(`${AI_API_BASE}/chat/completions`, {
+    const data = await apiFetch('/api/ai/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: apiMessages,
-        max_tokens: 250,
-        temperature: 0.75,
-      }),
+      body: JSON.stringify({ athlete, checkin, messages }),
     })
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`)
-    const data = await response.json()
-    return data.choices[0].message.content.trim()
+    return data.text
   } catch (error) {
-    console.warn('AI chat API failed, using fallback:', error.message)
+    console.warn('AI chat backend failed, using fallback:', error.message)
     return null
   }
 }
