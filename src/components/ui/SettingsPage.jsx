@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Settings, Sun, Moon, Clock, User, Bell, Shield, LogOut, Edit3, Save, X, CheckCircle2 } from 'lucide-react'
+import { Settings, Sun, Moon, Clock, User, Bell, Shield, LogOut, Edit3, Save, X, CheckCircle2, Globe, Server, ExternalLink, RefreshCw, AlertTriangle } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { getApiBaseUrl, setApiBaseUrl, isRealMode, testBackendConnection } from '../../config/api.js'
 
 function Toast({ message, visible }) {
   return (
@@ -33,6 +34,13 @@ export default function SettingsPage({ role }) {
   const [toast, setToast] = useState({ visible: false, message: '' })
   const [notifications, setNotifications] = useState(true)
   const [weeklyReport, setWeeklyReport] = useState(true)
+
+  // Backend connection state
+  const [backendUrl, setBackendUrl] = useState(getApiBaseUrl() || '')
+  const [connectionStatus, setConnectionStatus] = useState(null) // 'testing' | 'connected' | 'error' | null
+  const [connectionError, setConnectionError] = useState('')
+
+  const realMode = isRealMode()
 
   // Editable profile state
   const [editForm, setEditForm] = useState({
@@ -72,6 +80,45 @@ export default function SettingsPage({ role }) {
   const handleLogout = () => {
     logout()
     navigate('/login')
+  }
+
+  // Backend connection handlers
+  const handleTestConnection = async () => {
+    if (!backendUrl.trim()) {
+      setConnectionStatus('error')
+      setConnectionError('Please enter a backend URL')
+      return
+    }
+    setConnectionStatus('testing')
+    setConnectionError('')
+    const result = await testBackendConnection(backendUrl.trim())
+    if (result.ok) {
+      setConnectionStatus('connected')
+      setConnectionError('')
+    } else {
+      setConnectionStatus('error')
+      setConnectionError(result.error)
+    }
+  }
+
+  const handleSaveBackend = () => {
+    const url = backendUrl.trim()
+    if (!url) {
+      setApiBaseUrl('')
+      showToast('Backend URL cleared — using default')
+    } else {
+      setApiBaseUrl(url)
+      showToast('Backend URL saved!')
+    }
+    setConnectionStatus(null)
+  }
+
+  const handleClearBackend = () => {
+    setBackendUrl('')
+    setApiBaseUrl('')
+    setConnectionStatus(null)
+    setConnectionError('')
+    showToast('Backend URL cleared — using default')
   }
 
   const themeLabel = theme === 'dark' ? 'Dark Mode' : theme === 'light' ? 'Light Mode' : 'Auto (Time-based)'
@@ -269,6 +316,78 @@ export default function SettingsPage({ role }) {
               </label>
             </div>
           </motion.div>
+
+          {/* Backend Connection */}
+          {realMode && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }} className="glass-card p-5 border border-blue-200 dark:border-blue-800/30">
+              <div className="flex items-center gap-2 mb-4">
+                <Server size={14} className="text-blue-400" />
+                <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-400">Backend Connection</h3>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-pivot-500 dark:text-slate-400 mb-1.5 block">Backend URL</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={backendUrl}
+                      onChange={e => { setBackendUrl(e.target.value); setConnectionStatus(null) }}
+                      placeholder="https://your-backend.railway.app"
+                      className="flex-1 bg-white dark:bg-slate-800 border border-pivot-200 dark:border-slate-600 rounded-xl px-3 py-2 text-sm text-pivot-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+                    />
+                    <button
+                      onClick={handleTestConnection}
+                      disabled={connectionStatus === 'testing'}
+                      className="px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 text-sm text-pivot-600 dark:text-slate-300 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors active:scale-95 disabled:opacity-50"
+                    >
+                      {connectionStatus === 'testing' ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Globe size={14} />
+                      )}
+                    </button>
+                  </div>
+                  {connectionStatus === 'connected' && (
+                    <p className="text-xs text-emerald-500 mt-1.5 flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Connected successfully!
+                    </p>
+                  )}
+                  {connectionStatus === 'error' && (
+                    <p className="text-xs text-rose-500 mt-1.5 flex items-center gap-1">
+                      <AlertTriangle size={12} /> {connectionError}
+                    </p>
+                  )}
+                  {!connectionStatus && backendUrl && (
+                    <p className="text-xs text-pivot-400 mt-1.5">Click the globe icon to test connection</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveBackend}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/20 transition-colors active:scale-[0.98]"
+                  >
+                    <Save size={14} /> Save URL
+                  </button>
+                  <button
+                    onClick={handleClearBackend}
+                    className="px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 text-sm text-pivot-400 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors active:scale-95"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <a
+                  href="https://github.com/Tim200804/Pivot-Backend#readme"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-pivot-400 hover:text-blue-500 transition-colors"
+                >
+                  <ExternalLink size={10} /> How to deploy your backend
+                </a>
+              </div>
+            </motion.div>
+          )}
 
           {/* Account */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-card p-5 border border-rose-200 dark:border-rose-800/30">

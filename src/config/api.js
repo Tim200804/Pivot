@@ -7,14 +7,14 @@
  *   VITE_AUTH_MODE=mock   -> npm run dev:mock
  *   VITE_AUTH_MODE=real   -> npm run dev:real
  *
- * Online deployment: set your Render backend URL in localStorage:
+ * Online deployment: set your backend URL in localStorage:
  *   localStorage.setItem('pivot_api_url', 'https://your-app.onrender.com')
  */
 
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'mock'
 
 // Priority: 1) localStorage override  2) env var  3) dev proxy  4) localhost fallback
-function getApiBaseUrl() {
+export function getApiBaseUrl() {
   const lsUrl = localStorage.getItem('pivot_api_url')
   if (lsUrl) return lsUrl
 
@@ -26,18 +26,30 @@ function getApiBaseUrl() {
   return 'http://localhost:5001'
 }
 
-const API_BASE_URL = getApiBaseUrl()
+export function setApiBaseUrl(url) {
+  if (!url || url.trim() === '') {
+    localStorage.removeItem('pivot_api_url')
+  } else {
+    localStorage.setItem('pivot_api_url', url.trim().replace(/\/$/, ''))
+  }
+}
 
 export const isMockMode = () => AUTH_MODE === 'mock'
 export const isRealMode = () => AUTH_MODE === 'real'
 
-export const API_URL = API_BASE_URL
+// Detect if we're in a deployed (non-dev) environment with localhost fallback
+export function isUsingLocalhostFallback() {
+  if (import.meta.env.DEV) return false
+  const url = getApiBaseUrl()
+  return url.includes('localhost') || url.includes('127.0.0.1')
+}
 
 /**
  * Generic fetch wrapper with JWT auth
  */
 export async function apiFetch(path, options = {}) {
-  const url = `${API_BASE_URL}${path}`
+  const baseUrl = getApiBaseUrl()
+  const url = `${baseUrl}${path}`
   const token = localStorage.getItem('pivot_token')
 
   const headers = {
@@ -65,6 +77,23 @@ export async function apiFetch(path, options = {}) {
   }
 
   return data
+}
+
+/**
+ * Test if backend is reachable
+ */
+export async function testBackendConnection(baseUrl) {
+  const testUrl = `${baseUrl.replace(/\/$/, '')}/api/health`
+  try {
+    const res = await fetch(testUrl, { method: 'GET', signal: AbortSignal.timeout(8000) })
+    if (res.ok) {
+      const data = await res.json().catch(() => null)
+      return { ok: true, data }
+    }
+    return { ok: false, error: `HTTP ${res.status}` }
+  } catch (err) {
+    return { ok: false, error: err.message || 'Network error' }
+  }
 }
 
 /* ─── Auth API ─── */
