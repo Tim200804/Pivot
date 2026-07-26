@@ -108,8 +108,10 @@ export default function SignUpForm({ role, sport, setSport }) {
   const isAthlete = role === 'athlete'
   const gradient = isAthlete ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : 'linear-gradient(135deg, #14b8a6, #0d9488)'
 
+  const inputPrefix = role === 'athlete' ? 'athlete' : 'coach'
+
   return (
-    <motion.form {...fadeUp} onSubmit={handleSubmit} className="space-y-5">
+    <motion.form {...fadeUp} onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
       <div>
         <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-2">Sport <span className="text-red-400">*</span></label>
         <div className="grid grid-cols-2 gap-3">
@@ -124,7 +126,7 @@ export default function SignUpForm({ role, sport, setSport }) {
           <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">School / University <span className="text-red-400">*</span></label>
           <div className="relative">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-pivot-400 pointer-events-none" />
-            <input type="text" value={schoolSearch || school} onChange={(e) => { setSchoolSearch(e.target.value); setSchool(e.target.value); setShowSchoolPicker(true) }} onFocus={() => setShowSchoolPicker(true)} placeholder="Search your school..." className={`${glassInput} pl-10`} required />
+            <input type="text" name={`${inputPrefix}-school`} autoComplete="off" value={schoolSearch || school} onChange={(e) => { setSchoolSearch(e.target.value); setSchool(e.target.value); setShowSchoolPicker(true) }} onFocus={() => setShowSchoolPicker(true)} placeholder="Search your school..." className={`${glassInput} pl-10`} required />
           </div>
           {showSchoolPicker && filteredSchools.length > 0 && (
             <div className="absolute z-30 mt-1.5 w-full max-h-52 overflow-y-auto rounded-2xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl shadow-black/5 py-1">
@@ -139,7 +141,7 @@ export default function SignUpForm({ role, sport, setSport }) {
         </div>
         <div>
           <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Team Name <span className="text-red-400">*</span></label>
-          <input type="text" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder={sport === 'rowing' ? 'e.g. Varsity Heavyweight 8+' : 'e.g. Men\'s Varsity Basketball'} className={glassInput} required />
+          <input type="text" name={`${inputPrefix}-team`} autoComplete="off" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder={sport === 'rowing' ? 'e.g. Varsity Heavyweight 8+' : 'e.g. Men\'s Varsity Basketball'} className={glassInput} required />
         </div>
       </div>
 
@@ -148,11 +150,11 @@ export default function SignUpForm({ role, sport, setSport }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Full Name <span className="text-red-400">*</span></label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={isAthlete ? 'Alex Chen' : 'Coach Taylor'} className={glassInput} required />
+            <input type="text" name={`${inputPrefix}-name`} autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} placeholder={isAthlete ? 'Alex Chen' : 'Coach Taylor'} className={glassInput} required />
           </div>
           <div>
             <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Email <span className="text-red-400">*</span></label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isAthlete ? 'alex@team.edu' : 'coach@team.edu'} className={glassInput} required />
+            <input type="email" name={`${inputPrefix}-email`} autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isAthlete ? 'alex@team.edu' : 'coach@team.edu'} className={glassInput} required />
           </div>
         </div>
         {isAthlete ? (
@@ -168,11 +170,11 @@ export default function SignUpForm({ role, sport, setSport }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Password <span className="text-red-400">*</span></label>
-              <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} placeholder="Min 6 characters" minLength={6} className={glassInput} required={!isMockMode()} />
+              <input type="password" name={`${inputPrefix}-password`} autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} placeholder="Min 6 characters" minLength={6} className={glassInput} required={!isMockMode()} />
             </div>
             <div>
               <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Confirm Password <span className="text-red-400">*</span></label>
-              <input type="password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError('') }} placeholder="Repeat password" className={glassInput} required={!isMockMode()} />
+              <input type="password" name={`${inputPrefix}-confirm-password`} autoComplete="new-password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError('') }} placeholder="Repeat password" className={glassInput} required={!isMockMode()} />
             </div>
           </div>
         </div>
@@ -184,13 +186,13 @@ export default function SignUpForm({ role, sport, setSport }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Height (cm) <span className="text-red-400">*</span></label>
-              <input type="number" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="e.g. 188" min="100" max="250" className={glassInput} required />
+              <input type="number" name={`${inputPrefix}-height`} autoComplete="off" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="e.g. 188" min="100" max="250" className={glassInput} required />
             </div>
             <div>
               <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Weight (kg) <span className="text-red-400">*</span></label>
               <div className="relative">
                 <Weight size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-pivot-400 pointer-events-none" />
-                <input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="e.g. 82" min="30" max="200" className={`${glassInput} pl-10`} required />
+                <input type="number" name={`${inputPrefix}-weight`} autoComplete="off" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="e.g. 82" min="30" max="200" className={`${glassInput} pl-10`} required />
               </div>
             </div>
           </div>

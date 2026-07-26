@@ -128,7 +128,7 @@ export default function LoginPage() {
                   {stage === 'signin' ? (
                     <SignInForm key="signin" role={role} sport={sport} savedForRole={savedForRole} />
                   ) : (
-                    <SignUpForm key="signup" role={role} sport={sport} setSport={setSport} />
+                    <SignUpForm key={`signup-${role}`} role={role} sport={sport} setSport={setSport} />
                   )}
                 </AnimatePresence>
               </motion.div>
