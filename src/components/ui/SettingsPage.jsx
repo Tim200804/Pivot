@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Settings, Sun, Moon, Clock, User, Bell, Shield, LogOut, Edit3, Save, X, CheckCircle2 } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
@@ -6,6 +6,8 @@ import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { isMockMode } from '../../config/api.js'
+import { apiUpdatePreferences } from '../../config/api.js'
 
 function Toast({ message, visible }) {
   return (
@@ -27,12 +29,14 @@ function Toast({ message, visible }) {
 
 export default function SettingsPage({ role }) {
   const { theme, setTheme } = useTheme()
-  const { user, login, logout } = useUser()
+  const { user, login, logout, setUser } = useUser()
   const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
   const [toast, setToast] = useState({ visible: false, message: '' })
-  const [notifications, setNotifications] = useState(true)
-  const [weeklyReport, setWeeklyReport] = useState(true)
+  // Notification preferences — sourced from server (real mode) or local state (mock mode)
+  const [notifications, setNotifications] = useState(() => user?.preferences?.alertNotifications ?? true)
+  const [weeklyReport, setWeeklyReport] = useState(() => user?.preferences?.weeklyReport ?? true)
+  const [prefSaving, setPrefSaving] = useState(false)
 
   // Editable profile state
   const [editForm, setEditForm] = useState({
@@ -72,6 +76,34 @@ export default function SettingsPage({ role }) {
   const handleLogout = () => {
     logout()
     navigate('/login')
+  }
+
+  // Persist preference toggle. In real mode, PATCH the server; the response
+  // gives us the canonical user record which we write back to the local
+  // context so a refresh shows the same state.
+  const persistPreference = async (patch) => {
+    if (isMockMode()) return
+    setPrefSaving(true)
+    try {
+      const data = await apiUpdatePreferences(patch)
+      if (data?.user) {
+        setUser({ ...user, ...data.user, preferences: data.user.preferences })
+      }
+    } catch (err) {
+      showToast('Failed to save preference')
+    } finally {
+      setPrefSaving(false)
+    }
+  }
+
+  const handleToggleNotifications = (next) => {
+    setNotifications(next)
+    persistPreference({ alertNotifications: next })
+  }
+
+  const handleToggleWeekly = (next) => {
+    setWeeklyReport(next)
+    persistPreference({ weeklyReport: next })
   }
 
   const themeLabel = theme === 'dark' ? 'Dark Mode' : theme === 'light' ? 'Light Mode' : 'Auto (Time-based)'
@@ -249,7 +281,7 @@ export default function SettingsPage({ role }) {
                   <p className="text-xs text-pivot-400">Get notified when your metrics trigger an alert</p>
                 </div>
                 <button
-                  onClick={() => setNotifications(!notifications)}
+                  onClick={() => handleToggleNotifications(!notifications)}
                   className={`w-10 h-6 rounded-full relative transition-colors ${notifications ? 'bg-accent-teal' : 'bg-pivot-200 dark:bg-slate-600'}`}
                 >
                   <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${notifications ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -261,7 +293,7 @@ export default function SettingsPage({ role }) {
                   <p className="text-xs text-pivot-400">Receive a weekly summary of your wellness data</p>
                 </div>
                 <button
-                  onClick={() => setWeeklyReport(!weeklyReport)}
+                  onClick={() => handleToggleWeekly(!weeklyReport)}
                   className={`w-10 h-6 rounded-full relative transition-colors ${weeklyReport ? 'bg-accent-teal' : 'bg-pivot-200 dark:bg-slate-600'}`}
                 >
                   <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${weeklyReport ? 'translate-x-4' : 'translate-x-0.5'}`} />

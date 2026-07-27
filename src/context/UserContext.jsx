@@ -221,7 +221,7 @@ export function UserProvider({ children }) {
 
   const value = {
     user, login, logout, register, forgetProfile, findSavedProfile, savedProfiles,
-    loading, isMockMode,
+    loading, isMockMode, setUser,
     getPositionsForSport, getSchoolsForSport, COACH_ROLES,
   }
 
