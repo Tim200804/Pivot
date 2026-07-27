@@ -115,3 +115,10 @@ export async function apiLogin(credentials) {
 export async function apiGetMe() {
   return apiFetch('/api/auth/me', { method: 'GET' })
 }
+
+/* ─── Schools API ─── */
+
+export async function apiSearchSchools(query) {
+  if (!query || query.trim().length < 2) return []
+  return apiFetch(`/api/schools?q=${encodeURIComponent(query.trim())}`, { method: 'GET' })
+}

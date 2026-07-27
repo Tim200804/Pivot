@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowRight, ShipWheel, Dumbbell, Search, GraduationCap, Users, Ruler, Weight, ChevronDown, CheckCircle2, Lock, Loader2 } from 'lucide-react'
 import { useUser, COACH_ROLES } from '../../context/UserContext'
 import { isMockMode } from '../../config/api'
+import { apiSearchSchools } from '../../config/api'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -17,6 +18,8 @@ export default function SignUpForm({ role, sport, setSport }) {
   const [school, setSchool] = useState('')
   const [schoolSearch, setSchoolSearch] = useState('')
   const [showSchoolPicker, setShowSchoolPicker] = useState(false)
+  const [schoolResults, setSchoolResults] = useState([])
+  const [schoolLoading, setSchoolLoading] = useState(false)
   const [teamName, setTeamName] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -48,10 +51,38 @@ export default function SignUpForm({ role, sport, setSport }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const schools = getSchoolsForSport(sport)
-  const filteredSchools = schoolSearch
-    ? schools.filter(s => s.name.toLowerCase().includes(schoolSearch.toLowerCase()))
-    : schools
+  // School search via API (real mode) or local mock
+  useEffect(() => {
+    if (isMockMode()) return
+    if (!schoolSearch || schoolSearch.trim().length < 2) {
+      setSchoolResults([])
+      return
+    }
+    setSchoolLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiSearchSchools(schoolSearch)
+        // Map API format {id, name, fullName} → {name, region}
+        setSchoolResults(data.map(s => ({
+          name: s.fullName || s.name,
+          shortName: s.name,
+          id: s.id
+        })))
+      } catch {
+        setSchoolResults([])
+      } finally {
+        setSchoolLoading(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [schoolSearch])
+
+  const mockSchools = getSchoolsForSport(sport)
+  const filteredMockSchools = schoolSearch
+    ? mockSchools.filter(s => s.name.toLowerCase().includes(schoolSearch.toLowerCase()))
+    : mockSchools
+
+  const displaySchools = isMockMode() ? filteredMockSchools : schoolResults
   const positions = getPositionsForSport(sport)
 
   const isFormValid = useMemo(() => {
@@ -128,14 +159,22 @@ export default function SignUpForm({ role, sport, setSport }) {
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-pivot-400 pointer-events-none" />
             <input type="text" name={`${inputPrefix}-school`} autoComplete="off" value={schoolSearch || school} onChange={(e) => { setSchoolSearch(e.target.value); setSchool(e.target.value); setShowSchoolPicker(true) }} onFocus={() => setShowSchoolPicker(true)} placeholder="Search your school..." className={`${glassInput} pl-10`} required />
           </div>
-          {showSchoolPicker && filteredSchools.length > 0 && (
+          {showSchoolPicker && (displaySchools.length > 0 || schoolLoading) && (
             <div className="absolute z-30 mt-1.5 w-full max-h-52 overflow-y-auto rounded-2xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl shadow-black/5 py-1">
-              {filteredSchools.map((s) => (
-                <button key={s.name} type="button" onClick={() => { setSchool(s.name); setSchoolSearch(''); setShowSchoolPicker(false) }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-pivot-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between ${school === s.name ? 'bg-blue-50 dark:bg-blue-900/20 text-accent-blue font-medium' : 'text-pivot-700 dark:text-slate-300'}`}>
+              {schoolLoading && (
+                <div className="px-4 py-3 text-sm text-pivot-400 dark:text-slate-500 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Searching schools...
+                </div>
+              )}
+              {!schoolLoading && displaySchools.map((s) => (
+                <button key={s.id || s.name} type="button" onClick={() => { setSchool(s.name); setSchoolSearch(''); setShowSchoolPicker(false) }} className={`w-full text-left px-4 py-2.5 text-sm hover:bg-pivot-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between ${school === s.name ? 'bg-blue-50 dark:bg-blue-900/20 text-accent-blue font-medium' : 'text-pivot-700 dark:text-slate-300'}`}>
                   <span>{s.name}</span>
-                  <span className="text-[10px] text-pivot-400 dark:text-slate-500 bg-pivot-100 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">{s.region}</span>
+                  {s.region && <span className="text-[10px] text-pivot-400 dark:text-slate-500 bg-pivot-100 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">{s.region}</span>}
                 </button>
               ))}
+              {!schoolLoading && displaySchools.length === 0 && schoolSearch.trim().length >= 2 && (
+                <div className="px-4 py-3 text-sm text-pivot-400 dark:text-slate-500">No schools found</div>
+              )}
             </div>
           )}
         </div>
