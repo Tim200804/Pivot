@@ -120,6 +120,14 @@ export async function apiCheckEmail(email) {
   return apiFetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`, { method: 'GET' })
 }
 
+export async function apiGetOptions({ role, sport } = {}) {
+  const params = new URLSearchParams()
+  if (role) params.set('role', role)
+  if (sport) params.set('sport', sport)
+  const qs = params.toString()
+  return apiFetch(`/api/auth/options${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
 /* ─── Schools API ─── */
 
 export async function apiSearchSchools(query) {

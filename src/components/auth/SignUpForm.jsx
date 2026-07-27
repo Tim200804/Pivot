@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowRight, ShipWheel, Dumbbell, Search, GraduationCap, Users, Ruler, Weight, ChevronDown, CheckCircle2, Lock, Loader2 } from 'lucide-react'
 import { useUser, COACH_ROLES } from '../../context/UserContext'
 import { isMockMode } from '../../config/api'
-import { apiSearchSchools, apiCheckEmail } from '../../config/api'
+import { apiSearchSchools, apiCheckEmail, apiGetOptions } from '../../config/api'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -39,6 +39,10 @@ export default function SignUpForm({ role, sport, setSport }) {
   const [emailValid, setEmailValid] = useState(true)
   const [emailAvailable, setEmailAvailable] = useState(true)
   const [emailChecking, setEmailChecking] = useState(false)
+  // Server-sourced options (loaded from /api/auth/options in real mode)
+  const [serverCoachRoles, setServerCoachRoles] = useState([])
+  const [serverPositions, setServerPositions] = useState([])
+  const [serverSports, setServerSports] = useState(null)
 
   const schoolRef = useRef(null)
   const positionRef = useRef(null)
@@ -112,13 +116,36 @@ export default function SignUpForm({ role, sport, setSport }) {
     return () => clearTimeout(timer)
   }, [email])
 
+  // Load server-side options (coach roles / positions / sports whitelist).
+  // Real mode: fetch from /api/auth/options — no client-side fallback to avoid
+  // trusting hardcoded values for security-sensitive filters.
+  // Mock mode: keep using local mock data (local-only, never sent to server).
+  useEffect(() => {
+    if (isMockMode()) return
+    let cancelled = false
+    const fetchOptions = async () => {
+      try {
+        const data = await apiGetOptions({ role, sport })
+        if (cancelled) return
+        if (Array.isArray(data.coachRoles)) setServerCoachRoles(data.coachRoles)
+        if (Array.isArray(data.sports)) setServerSports(data.sports)
+        if (Array.isArray(data.positions)) setServerPositions(data.positions)
+      } catch {
+        // Leave previous values in place; UI gracefully shows empty picker
+      }
+    }
+    fetchOptions()
+    return () => { cancelled = true }
+  }, [role, sport])
+
   const mockSchools = getSchoolsForSport(sport)
   const filteredMockSchools = schoolSearch
     ? mockSchools.filter(s => s.name.toLowerCase().includes(schoolSearch.toLowerCase()))
     : mockSchools
 
   const displaySchools = isMockMode() ? filteredMockSchools : schoolResults
-  const positions = getPositionsForSport(sport)
+  const positions = isMockMode() ? getPositionsForSport(sport) : serverPositions
+  const coachRoles = isMockMode() ? COACH_ROLES : serverCoachRoles
 
   const isFormValid = useMemo(() => {
     const base = school && teamName && name && email && emailValid
@@ -257,7 +284,7 @@ export default function SignUpForm({ role, sport, setSport }) {
         {isAthlete ? (
           <Picker ref={positionRef} label="Position" value={position} placeholder={sport === 'rowing' ? 'Select seat position...' : 'Select position...'} open={showPositionPicker} toggle={() => setShowPositionPicker(!showPositionPicker)} options={positions} onSelect={setPosition} accent="blue" />
         ) : (
-          <Picker ref={coachRoleRef} label="Role" value={coachRole} placeholder="Select your role..." open={showCoachRolePicker} toggle={() => setShowCoachRolePicker(!showCoachRolePicker)} options={COACH_ROLES} onSelect={setCoachRole} accent="teal" />
+          <Picker ref={coachRoleRef} label="Role" value={coachRole} placeholder="Select your role..." open={showCoachRolePicker} toggle={() => setShowCoachRolePicker(!showCoachRolePicker)} options={coachRoles} onSelect={setCoachRole} accent="teal" />
         )}
       </div>
 
