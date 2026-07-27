@@ -206,7 +206,7 @@ export default function SettingsPage({ role }) {
                     />
                   )}
                 </EditableField>
-                {user.position !== undefined && (
+                {user.role === 'athlete' && (
                   <EditableField label="Position" value={editing ? undefined : (user.position || '—')}>
                     {editing && (
                       <input
@@ -218,7 +218,7 @@ export default function SettingsPage({ role }) {
                     )}
                   </EditableField>
                 )}
-                {user.coachRole !== undefined && (
+                {user.role === 'coach' && (
                   <EditableField label="Coach Role" value={editing ? undefined : (user.coachRole || '—')}>
                     {editing && (
                       <input
@@ -230,7 +230,7 @@ export default function SettingsPage({ role }) {
                     )}
                   </EditableField>
                 )}
-                {user.height !== undefined && (
+                {user.role === 'athlete' && (
                   <EditableField label="Height / Weight" value={editing ? undefined : `${user.height || '—'}cm / ${user.weight || '—'}kg`}>
                     {editing && (
                       <div className="flex gap-2">
