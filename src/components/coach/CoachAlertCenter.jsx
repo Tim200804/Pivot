@@ -49,11 +49,12 @@ const PAGE_SIZE = 8
 
 export default function CoachAlertCenter() {
   const { alerts, totalAlerts, alertCount } = useAlerts()
-  const [searchQuery, setSearchQuery] = useState('')
   const [dismissedAlerts, setDismissedAlerts] = useState(new Set())
   const [actionMenu, setActionMenu] = useState(null)
   const [toast, setToast] = useState({ visible: false, message: '', variant: 'success' })
   const [historyPage, setHistoryPage] = useState(1)
+  const [historyStatus, setHistoryStatus] = useState('all') // 'all' | 'active' | 'resolved'
+  const [historySearch, setHistorySearch] = useState('')
 
   // Athletes directory + send-message modal state
   const [athletes, setAthletes] = useState([])
@@ -67,15 +68,8 @@ export default function CoachAlertCenter() {
     setTimeout(() => setToast({ visible: false, message: '', variant: 'success' }), 2500)
   }
 
-  // Filter alerts by search
-  const filteredAlerts = searchQuery
-    ? alerts.filter(a => a.athleteName.toLowerCase().includes(searchQuery.toLowerCase()) || a.type.toLowerCase().includes(searchQuery.toLowerCase()))
-    : alerts
-
-  const activeAlerts = filteredAlerts.filter((_, i) => {
-    const globalIdx = alerts.indexOf(filteredAlerts[i])
-    return !dismissedAlerts.has(globalIdx)
-  })
+  // Filter active alerts only by dismissed set
+  const activeAlerts = alerts.filter((_, i) => !dismissedAlerts.has(i))
 
   const handleDismiss = (alert) => {
     const idx = alerts.indexOf(alert)
@@ -161,26 +155,6 @@ export default function CoachAlertCenter() {
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-pivot-900 dark:text-white tracking-tight">Alert Center</h2>
               <p className="text-sm text-pivot-500 dark:text-slate-400 mt-1">Manage and track all team wellness alerts</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-pivot-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Filter by name or type..."
-                  className="pl-9 pr-4 py-2 rounded-2xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-teal/40 w-52"
-                />
-              </div>
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="text-xs text-pivot-400 hover:text-pivot-600 transition-colors"
-                >
-                  Clear
-                </button>
-              )}
             </div>
           </motion.div>
 
@@ -291,20 +265,69 @@ export default function CoachAlertCenter() {
 
           {/* Alert History */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
               <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
                 <Clock size={14} />
                 Alert History
-                <span className="text-pivot-400 normal-case font-normal">({alertHistory.length})</span>
               </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-pivot-400" />
+                  <input
+                    type="text"
+                    value={historySearch}
+                    onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1) }}
+                    placeholder="Search by name or type..."
+                    className="pl-8 pr-3 py-1.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-teal/40 w-48"
+                  />
+                </div>
+                <div className="relative">
+                  <select
+                    value={historyStatus}
+                    onChange={(e) => { setHistoryStatus(e.target.value); setHistoryPage(1) }}
+                    className="appearance-none pl-3 pr-8 py-1.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-pivot-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-teal/40 cursor-pointer"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                  <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-pivot-400 pointer-events-none" />
+                </div>
+                {(historySearch || historyStatus !== 'all') && (
+                  <button
+                    onClick={() => { setHistorySearch(''); setHistoryStatus('all'); setHistoryPage(1) }}
+                    className="text-xs text-pivot-400 hover:text-pivot-600 dark:hover:text-slate-300 transition-colors px-2"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
             <div className="glass-card overflow-hidden">
               <div className="max-h-[420px] overflow-y-auto divide-y divide-pivot-100 dark:divide-slate-700/30 custom-scrollbar">
                 {(() => {
-                  const totalPages = Math.max(1, Math.ceil(alertHistory.length / PAGE_SIZE))
+                  // Apply search + status filters
+                  const filtered = alertHistory.filter(item => {
+                    const q = historySearch.trim().toLowerCase()
+                    const matchesQuery = !q
+                      || item.athleteName.toLowerCase().includes(q)
+                      || item.type.toLowerCase().includes(q)
+                    const matchesStatus = historyStatus === 'all'
+                      ? true
+                      : historyStatus === 'active' ? !item.resolved : item.resolved
+                    return matchesQuery && matchesStatus
+                  })
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
                   const safePage = Math.min(historyPage, totalPages)
                   const start = (safePage - 1) * PAGE_SIZE
-                  const pageItems = alertHistory.slice(start, start + PAGE_SIZE)
+                  const pageItems = filtered.slice(start, start + PAGE_SIZE)
+                  if (pageItems.length === 0) {
+                    return (
+                      <div className="p-8 text-center">
+                        <p className="text-sm text-pivot-500 dark:text-slate-400">No history matches your filters</p>
+                      </div>
+                    )
+                  }
                   return pageItems.map((item) => (
                   <div key={item.id} className="p-4 flex items-center justify-between hover:bg-pivot-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer active:scale-[0.99]">
                     <div className="flex items-center gap-3 min-w-0">
@@ -327,8 +350,19 @@ export default function CoachAlertCenter() {
                   ))
                 })()}
               </div>
-              {alertHistory.length > PAGE_SIZE && (() => {
-                const totalPages = Math.ceil(alertHistory.length / PAGE_SIZE)
+              {(() => {
+                const filtered = alertHistory.filter(item => {
+                  const q = historySearch.trim().toLowerCase()
+                  const matchesQuery = !q
+                    || item.athleteName.toLowerCase().includes(q)
+                    || item.type.toLowerCase().includes(q)
+                  const matchesStatus = historyStatus === 'all'
+                    ? true
+                    : historyStatus === 'active' ? !item.resolved : item.resolved
+                  return matchesQuery && matchesStatus
+                })
+                if (filtered.length <= PAGE_SIZE) return null
+                const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
                 const safePage = Math.min(historyPage, totalPages)
                 return (
                   <div className="flex items-center justify-between px-4 py-3 border-t border-pivot-100 dark:border-slate-700/30 bg-pivot-50/40 dark:bg-slate-800/30">
@@ -341,7 +375,7 @@ export default function CoachAlertCenter() {
                     </button>
                     <span className="text-xs text-pivot-500 dark:text-slate-400">
                       Page <span className="font-semibold text-pivot-700 dark:text-slate-200">{safePage}</span> of {totalPages}
-                      <span className="text-pivot-400 ml-1">· {alertHistory.length} total</span>
+                      <span className="text-pivot-400 ml-1">· {filtered.length} total</span>
                     </span>
                     <button
                       onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
