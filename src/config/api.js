@@ -141,3 +141,32 @@ export async function apiSearchSchools(query) {
   if (!query || query.trim().length < 2) return []
   return apiFetch(`/api/schools?q=${encodeURIComponent(query.trim())}`, { method: 'GET' })
 }
+
+/* ─── Messages API ─── */
+
+export async function apiListMessages({ unreadOnly = false, limit = 50 } = {}) {
+  const params = new URLSearchParams()
+  if (unreadOnly) params.set('unread', 'true')
+  if (limit) params.set('limit', String(limit))
+  const qs = params.toString()
+  return apiFetch(`/api/messages${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
+export async function apiSendMessage({ recipientId, body, subject, alertLevel, alertType }) {
+  return apiFetch('/api/messages', {
+    method: 'POST',
+    body: JSON.stringify({ recipientId, body, subject, alertLevel, alertType }),
+  })
+}
+
+export async function apiMarkMessageRead(id) {
+  return apiFetch(`/api/messages/${id}/read`, { method: 'PATCH' })
+}
+
+export async function apiGetUnreadCount() {
+  return apiFetch('/api/messages/unread-count', { method: 'GET' })
+}
+
+export async function apiListAthletes() {
+  return apiFetch('/api/auth/athletes', { method: 'GET' })
+}

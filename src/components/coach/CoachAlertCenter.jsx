@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown } from 'lucide-react'
+import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown, Send, X } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
 import { useAlerts } from '../../context/AlertContext'
+import { isMockMode } from '../../config/api'
+import { apiListAthletes, apiSendMessage } from '../../config/api'
 
 function Toast({ message, visible, variant }) {
   const bg = variant === 'error' ? 'bg-red-600' : 'bg-emerald-600'
@@ -41,6 +43,13 @@ export default function CoachAlertCenter() {
   const [actionMenu, setActionMenu] = useState(null)
   const [toast, setToast] = useState({ visible: false, message: '', variant: 'success' })
 
+  // Athletes directory + send-message modal state
+  const [athletes, setAthletes] = useState([])
+  const [composeTarget, setComposeTarget] = useState(null) // alert object whose athlete we're messaging
+  const [messageBody, setMessageBody] = useState('')
+  const [sending, setSending] = useState(false)
+  const menuRef = useRef(null)
+
   const showToast = (msg, variant = 'success') => {
     setToast({ visible: true, message: msg, variant })
     setTimeout(() => setToast({ visible: false, message: '', variant: 'success' }), 2500)
@@ -61,6 +70,74 @@ export default function CoachAlertCenter() {
     setDismissedAlerts(prev => new Set([...prev, idx]))
     setActionMenu(null)
     showToast(`Alert for ${alert.athleteName} marked as addressed`)
+  }
+
+  // Load athletes directory once (real mode only) so we can resolve alert
+  // names to user IDs for sending messages.
+  useEffect(() => {
+    if (isMockMode()) return
+    let cancelled = false
+    apiListAthletes()
+      .then(data => { if (!cancelled) setAthletes(data.athletes || []) })
+      .catch(() => { if (!cancelled) setAthletes([]) })
+    return () => { cancelled = true }
+  }, [])
+
+  const openComposeFor = (alert) => {
+    setActionMenu(null)
+    setComposeTarget(alert)
+    setMessageBody('')
+  }
+
+  const closeCompose = () => {
+    setComposeTarget(null)
+    setMessageBody('')
+  }
+
+  const resolveRecipient = (alert) => {
+    if (!alert) return null
+    const name = (alert.athleteName || '').trim().toLowerCase()
+    if (!name) return null
+    // Exact match preferred
+    return athletes.find(a => a.name.toLowerCase() === name)
+        || athletes.find(a => a.name.toLowerCase().includes(name))
+        || null
+  }
+
+  const handleSendMessage = async () => {
+    if (!composeTarget) return
+    const recipient = resolveRecipient(composeTarget)
+    if (!recipient) {
+      showToast(`Could not find athlete "${composeTarget.athleteName}" in your roster`, 'error')
+      return
+    }
+    const body = messageBody.trim()
+    if (!body) {
+      showToast('Please type a message', 'error')
+      return
+    }
+    if (isMockMode()) {
+      // Local-only acknowledgement in mock mode
+      showToast(`Message sent to ${recipient.name} (mock)`)
+      closeCompose()
+      return
+    }
+    setSending(true)
+    try {
+      await apiSendMessage({
+        recipientId: recipient.id,
+        body,
+        subject: `Re: ${composeTarget.type}`,
+        alertLevel: composeTarget.level,
+        alertType: composeTarget.type,
+      })
+      showToast(`Message sent to ${recipient.name}`)
+      closeCompose()
+    } catch (err) {
+      showToast(err.message || 'Failed to send message', 'error')
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -183,7 +260,7 @@ export default function CoachAlertCenter() {
                                   <CheckCheck size={14} className="text-emerald-500" /> Mark Addressed
                                 </button>
                                 <button
-                                  onClick={() => { setActionMenu(null); showToast(`Message sent to ${alert.athleteName}`) }}
+                                  onClick={() => openComposeFor(alert)}
                                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors"
                                 >
                                   <MessageCircle size={14} className="text-accent-blue" /> Contact Athlete
@@ -234,6 +311,69 @@ export default function CoachAlertCenter() {
       </div>
 
       <Toast message={toast.message} visible={toast.visible} variant={toast.variant} />
+
+      {/* Compose message modal */}
+      <AnimatePresence>
+        {composeTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={closeCompose}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card p-5 rounded-2xl shadow-2xl border border-pivot-200 dark:border-slate-600 w-full max-w-md"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <MessageCircle size={18} className="text-accent-blue" />
+                  <h3 className="text-sm font-semibold text-pivot-900 dark:text-white">
+                    Message to {composeTarget.athleteName}
+                  </h3>
+                </div>
+                <button
+                  onClick={closeCompose}
+                  className="p-1 rounded-lg text-pivot-400 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs text-pivot-500 dark:text-slate-400 mb-3">
+                Re: <span className="font-medium text-pivot-700 dark:text-slate-300">{composeTarget.type}</span>
+              </p>
+              <textarea
+                value={messageBody}
+                onChange={(e) => setMessageBody(e.target.value)}
+                placeholder={`Write a message to ${composeTarget.athleteName}…`}
+                rows={5}
+                className="w-full px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-blue/40 focus:border-accent-blue resize-none"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2 mt-3">
+                <button
+                  onClick={closeCompose}
+                  className="px-4 py-2 rounded-xl text-sm text-pivot-600 dark:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendMessage}
+                  disabled={sending || !messageBody.trim()}
+                  className="px-4 py-2 rounded-xl bg-accent-teal text-white text-sm font-medium hover:bg-teal-600 transition-colors active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send size={14} />
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
