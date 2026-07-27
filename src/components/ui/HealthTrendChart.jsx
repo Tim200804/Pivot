@@ -83,7 +83,7 @@ const baseOptions = {
 }
 
 const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, darkMode }) {
-  const labels = useMemo(() => data.map(d => d.day.slice(0, 3)), [data])
+  const labels = useMemo(() => data.map(d => d.day), [data])
 
   const datasets = useMemo(() => metrics.map(metric => ({
     label: metricLabels[metric] || metric,
@@ -124,7 +124,12 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
       x: {
         ...baseOptions.scales.x,
         grid: { color: darkMode ? 'rgba(148,163,184,0.08)' : 'rgba(0,0,0,0.04)', drawBorder: false },
-        ticks: { color: darkMode ? '#94a3b8' : '#64748b', font: { size: 11 } },
+        ticks: {
+          color: darkMode ? '#94a3b8' : '#64748b',
+          font: { size: 11 },
+          maxTicksLimit: data.length > 14 ? 10 : undefined,
+          maxRotation: data.length > 14 ? 45 : 0,
+        },
       },
       y: {
         ...baseOptions.scales.y,
@@ -132,7 +137,7 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
         ticks: { color: darkMode ? '#94a3b8' : '#64748b', font: { size: 11 } },
       },
     },
-  }), [darkMode, metrics.length])
+  }), [darkMode, metrics.length, data.length])
 
   return (
     <div className="glass-card p-6">

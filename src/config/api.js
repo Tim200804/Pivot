@@ -11,7 +11,7 @@
  *   localStorage.setItem('pivot_api_url', 'https://your-app.onrender.com')
  */
 
-const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'mock'
+const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || (import.meta.env.PROD ? 'real' : 'mock')
 
 // Priority: 1) localStorage override  2) env var  3) dev proxy  4) localhost fallback
 export function getApiBaseUrl() {

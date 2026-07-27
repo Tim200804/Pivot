@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { isMockMode, apiLogin, apiRegister } from '../config/api'
+import { isMockMode, apiLogin, apiRegister, apiGetMe } from '../config/api'
 
 const UserContext = createContext(null)
 
@@ -112,6 +112,41 @@ export function UserProvider({ children }) {
   const [user, setUser] = useState(null)
   const [savedProfiles, setSavedProfiles] = useState(loadSavedProfiles)
   const [loading, setLoading] = useState(false)
+  const [authRestored, setAuthRestored] = useState(false)
+
+  // Auto-restore login state from token on page refresh
+  useEffect(() => {
+    async function restoreAuth() {
+      if (isMockMode()) {
+        setAuthRestored(true)
+        return
+      }
+
+      const token = loadToken()
+      if (!token) {
+        setAuthRestored(true)
+        return
+      }
+
+      try {
+        const res = await apiGetMe()
+        if (res.success && res.user) {
+          setUser(res.user)
+        } else {
+          saveToken(null)
+        }
+      } catch (err) {
+        console.warn('Auth restore failed:', err.message)
+        if (err.status === 401 || err.status === 403) {
+          saveToken(null)
+        }
+      } finally {
+        setAuthRestored(true)
+      }
+    }
+
+    restoreAuth()
+  }, [])
 
   useEffect(() => {
     saveProfiles(savedProfiles)
@@ -221,7 +256,7 @@ export function UserProvider({ children }) {
 
   const value = {
     user, login, logout, register, forgetProfile, findSavedProfile, savedProfiles,
-    loading, isMockMode, setUser,
+    loading, isMockMode, setUser, authRestored,
     getPositionsForSport, getSchoolsForSport, COACH_ROLES,
   }
 

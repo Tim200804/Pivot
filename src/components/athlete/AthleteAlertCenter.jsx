@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, AlertTriangle, Shield, Info, ChevronRight, CheckCircle2, Eye, MessageCircle, X } from 'lucide-react'
+import { Bell, AlertTriangle, Shield, Info, ChevronRight, CheckCircle2, Eye, MessageCircle, X, TrendingDown, TrendingUp, Minus, Clock, Activity } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge from '../ui/AlertBadge'
 import { useAlerts } from '../../context/AlertContext'
@@ -88,10 +88,75 @@ export default function AthleteAlertCenter() {
     }
   }
 
+  const [selectedHistory, setSelectedHistory] = useState(null)
+
   const alertHistory = [
-    { id: 1, date: 'Jul 14', type: 'HRV Decline Detected', level: 'yellow', desc: '3-day downward trend in HRV detected', time: '3 days ago' },
-    { id: 2, date: 'Jul 13', type: 'Sleep < 6hrs', level: 'yellow', desc: 'Sleep dropped below 6 hours for 3 consecutive nights', time: '4 days ago' },
-    { id: 3, date: 'Jul 12', type: 'Recovery Check-in', level: 'info', desc: 'System flagged your metrics for coach review', time: '5 days ago' },
+    {
+      id: 1,
+      date: 'Jul 14',
+      type: 'HRV Decline Detected',
+      level: 'yellow',
+      desc: '3-day downward trend in HRV detected',
+      time: '3 days ago',
+      details: {
+        triggeredAt: 'Jul 14, 2026 · 06:30 AM',
+        duration: '3 days',
+        status: 'resolved',
+        metrics: [
+          { label: 'HRV (Jul 11)', value: '62 ms', trend: 'baseline' },
+          { label: 'HRV (Jul 12)', value: '55 ms', trend: 'down' },
+          { label: 'HRV (Jul 13)', value: '48 ms', trend: 'down' },
+          { label: 'HRV (Jul 14)', value: '42 ms', trend: 'down' },
+        ],
+        summary: 'Your HRV has declined 22.6% over the past 3 days, dropping from 62 ms to 42 ms. A sustained downward HRV trend typically signals elevated stress or incomplete recovery.',
+        recommendation: 'Prioritize sleep (8+ hrs), reduce training intensity by 20% for 2 days, and consider a light active-recovery session. If trend continues, notify your coach.',
+        coachNote: null,
+      },
+    },
+    {
+      id: 2,
+      date: 'Jul 13',
+      type: 'Sleep < 6hrs',
+      level: 'yellow',
+      desc: 'Sleep dropped below 6 hours for 3 consecutive nights',
+      time: '4 days ago',
+      details: {
+        triggeredAt: 'Jul 13, 2026 · 07:00 AM',
+        duration: '3 nights',
+        status: 'resolved',
+        metrics: [
+          { label: 'Sleep (Jul 10)', value: '7.2 hrs', trend: 'good' },
+          { label: 'Sleep (Jul 11)', value: '5.5 hrs', trend: 'down' },
+          { label: 'Sleep (Jul 12)', value: '5.1 hrs', trend: 'down' },
+          { label: 'Sleep (Jul 13)', value: '4.8 hrs', trend: 'down' },
+        ],
+        summary: 'Sleep duration fell below 6 hours for 3 consecutive nights. Chronic sleep debt under 6 hours is linked to reduced HRV, impaired decision-making, and higher injury risk.',
+        recommendation: 'Set a consistent bedtime (target 10:30 PM), avoid screens 1 hour before sleep, and keep your room cool (65-68°F). Consider a 20-min nap if training in the afternoon.',
+        coachNote: 'Tim — I noticed your sleep pattern dropped mid-week. Anything going on with classes or travel? Let me know if you need schedule adjustments. — Coach Sarah',
+      },
+    },
+    {
+      id: 3,
+      date: 'Jul 12',
+      type: 'Recovery Check-in',
+      level: 'info',
+      desc: 'System flagged your metrics for coach review',
+      time: '5 days ago',
+      details: {
+        triggeredAt: 'Jul 12, 2026 · 08:00 AM',
+        duration: '1 day',
+        status: 'resolved',
+        metrics: [
+          { label: 'Resting HR', value: '58 bpm', trend: 'up' },
+          { label: 'HRV', value: '51 ms', trend: 'down' },
+          { label: 'Sleep', value: '6.2 hrs', trend: 'borderline' },
+          { label: 'Mood Score', value: '6 / 10', trend: 'stable' },
+        ],
+        summary: 'Multiple metrics shifted simultaneously — resting HR rose slightly while HRV dipped. Although within yellow-range thresholds, the combined pattern triggered an automatic check-in flag for coach awareness.',
+        recommendation: 'No immediate action required. Continue normal training but monitor tomorrow morning\'s HRV. If it drops below 45 ms, scale back intensity.',
+        coachNote: 'Flagged for routine review. No intervention needed at this time. Keep an eye on it. — Coach Sarah',
+      },
+    },
   ]
 
   return (
@@ -230,6 +295,7 @@ export default function AthleteAlertCenter() {
               {alertHistory.map((item) => (
                 <div
                   key={item.id}
+                  onClick={() => setSelectedHistory(item)}
                   className="p-4 flex items-center justify-between hover:bg-pivot-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -311,6 +377,120 @@ export default function AthleteAlertCenter() {
                 >
                   Got it
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Alert History detail modal */}
+      <AnimatePresence>
+        {selectedHistory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedHistory(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card rounded-2xl shadow-2xl border border-pivot-200 dark:border-slate-600 w-full max-w-lg max-h-[85vh] overflow-y-auto custom-scrollbar"
+            >
+              {/* Header */}
+              <div className={`p-5 rounded-t-2xl border-b border-pivot-100 dark:border-slate-700/30 ${
+                selectedHistory.level === 'yellow' ? 'bg-amber-50/50 dark:bg-amber-900/10' :
+                selectedHistory.level === 'red' ? 'bg-rose-50/50 dark:bg-rose-900/10' :
+                'bg-blue-50/50 dark:bg-blue-900/10'
+              }`}>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      selectedHistory.level === 'yellow' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
+                      selectedHistory.level === 'red' ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' :
+                      'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                    }`}>
+                      <Activity size={18} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-pivot-900 dark:text-white">{selectedHistory.type}</h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[11px] text-pivot-400 flex items-center gap-1">
+                          <Clock size={10} /> {selectedHistory.details.triggeredAt}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                          selectedHistory.details.status === 'resolved'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        }`}>
+                          {selectedHistory.details.status === 'resolved' ? 'Resolved' : 'Needs Attention'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedHistory(null)}
+                    className="p-1.5 rounded-lg text-pivot-400 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-5">
+                {/* Metrics */}
+                <div>
+                  <h4 className="text-[11px] font-semibold text-pivot-400 uppercase tracking-wider mb-2">Relevant Metrics</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {selectedHistory.details.metrics.map((m, idx) => (
+                      <div key={idx} className="p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
+                        <div className="flex items-center gap-1 mb-1">
+                          <p className="text-[10px] text-pivot-400 uppercase">{m.label}</p>
+                          {m.trend === 'down' && <TrendingDown size={10} className="text-rose-400" />}
+                          {m.trend === 'up' && <TrendingUp size={10} className="text-emerald-400" />}
+                          {m.trend === 'stable' && <Minus size={10} className="text-pivot-300" />}
+                          {m.trend === 'good' && <TrendingUp size={10} className="text-emerald-400" />}
+                          {m.trend === 'borderline' && <TrendingDown size={10} className="text-amber-400" />}
+                        </div>
+                        <p className="text-sm font-semibold text-pivot-800 dark:text-slate-200">{m.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Summary */}
+                <div>
+                  <h4 className="text-[11px] font-semibold text-pivot-400 uppercase tracking-wider mb-1.5">Summary</h4>
+                  <p className="text-sm text-pivot-700 dark:text-slate-300 leading-relaxed">{selectedHistory.details.summary}</p>
+                </div>
+
+                {/* Recommendation */}
+                <div className="p-3 rounded-xl bg-accent-teal/5 dark:bg-teal-900/10 border border-accent-teal/10 dark:border-teal-700/20">
+                  <h4 className="text-[11px] font-semibold text-accent-teal uppercase tracking-wider mb-1.5">Recommendation</h4>
+                  <p className="text-sm text-pivot-700 dark:text-slate-300 leading-relaxed">{selectedHistory.details.recommendation}</p>
+                </div>
+
+                {/* Coach Note */}
+                {selectedHistory.details.coachNote && (
+                  <div className="p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50 border border-pivot-100 dark:border-slate-700/30">
+                    <h4 className="text-[11px] font-semibold text-pivot-400 uppercase tracking-wider mb-1.5">Coach Note</h4>
+                    <p className="text-sm text-pivot-600 dark:text-slate-400 leading-relaxed italic">"{selectedHistory.details.coachNote}"</p>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={() => setSelectedHistory(null)}
+                    className="px-4 py-2 rounded-xl bg-pivot-100 dark:bg-slate-700 text-pivot-700 dark:text-slate-200 text-sm font-medium hover:bg-pivot-200 dark:hover:bg-slate-600 transition-colors active:scale-95"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>

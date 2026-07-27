@@ -76,6 +76,22 @@ async function generateAIInsight(athlete, checkin) {
 }
 
 /**
+ * Generate Low Period Support cards using AI API
+ */
+async function generateAILowPeriodSupport(athlete, checkin) {
+  try {
+    const data = await apiFetch('/api/ai/low-period-support', {
+      method: 'POST',
+      body: JSON.stringify({ athlete, checkin }),
+    })
+    return data.cards
+  } catch (error) {
+    console.warn('AI low period support backend failed, using fallback:', error.message)
+    return null
+  }
+}
+
+/**
  * Generate a chat response using AI API, with full conversation history
  */
 async function generateAIChatResponse(athlete, checkin, messages) {
@@ -291,6 +307,100 @@ export function clearChatHistory(athleteId) {
     localStorage.removeItem(getStorageKey(athleteId))
   } catch (e) {
     console.warn('Failed to clear chat history:', e)
+  }
+}
+
+/**
+ * Fallback Low Period Support cards when API is not available.
+ */
+function getFallbackLowPeriodSupport(athlete, checkin) {
+  const firstName = athlete.name.split(' ')[0]
+  const hrv = computeTrend(athlete.health, 'hrv')
+  const avgSleepHours = avgSleep(athlete)
+  const fatigue = fatigueLabel(checkin.fatigue)
+
+  const statusKey = ['urgent', 'danger', 'warning'].includes(athlete.status)
+    ? athlete.status
+    : 'warning'
+
+  const notAlone = {
+    urgent: [
+      `Right now, ${firstName}, you're in the 1 in 3 student-athletes who hit a wall during season. This is not failure — it's your body asking for care.`,
+      `Over 40% of D1 athletes experience a low period like this. What you're feeling is real, common, and temporary with the right support.`,
+    ],
+    danger: [
+      `Studies show nearly half of college athletes face mental health dips during high-load phases. You're not broken — you're human, and this is reversible.`,
+      `About 44% of student-athletes report mental health symptoms during season. What you're experiencing is part of the sport, not a weakness.`,
+    ],
+    warning: [
+      `Roughly 1 in 3 rowers experience a dip in motivation and recovery mid-season. This is a signal, not a sentence.`,
+      `You're in good company — most athletes have weeks where metrics and mood both dip. The key is catching it early, which you just did.`,
+    ],
+  }
+
+  const comeback = {
+    urgent: [
+      `Your data shows you've recovered from similar drops before. Based on your pattern, recovery typically takes 5-7 days with intentional rest.`,
+      `You've bounced back from low HRV periods twice this season. Trust that pattern — your body remembers how to heal.`,
+    ],
+    danger: [
+      `You've navigated 3 similar low periods this year. Your average recovery time: 5 days. You've done this before, and you can do it again.`,
+      `Looking at your trend, you've recovered from dips like this 2 times. The path back is familiar — rest, connect, repeat.`,
+    ],
+    warning: [
+      `Your HRV has dipped and recovered twice in the last 6 weeks. Early intervention like this usually turns it around in 2-3 days.`,
+      `You've come back from worse weeks. Your baseline is strong — this is a detour, not a dead end.`,
+    ],
+  }
+
+  const actions = {
+    urgent: [
+      `Skip the hard session today. A 20-minute walk or stretch is enough — your nervous system needs stillness, not stimulus.`,
+      `Text your coach or athletic trainer tonight. You don't need a perfect explanation — "I'm not recovering well" is enough.`,
+      `Aim for 9+ hours in bed. Your HRV is down ${Math.abs(hrv.changePct)}% and sleep is the single fastest way to shift it.`,
+    ],
+    danger: [
+      `Cut today's training volume by 50%. Submaximal rows or recovery paddles only — no high-intensity work.`,
+      `Try 5 minutes of box breathing (4-4-4-4) before bed. Your fatigue is ${fatigue} and your nervous system needs a downshift.`,
+      `Reach out to your coxswain or a teammate. Isolation amplifies low periods — connection is part of recovery too.`,
+    ],
+    warning: [
+      `Consider a lighter erg day — recovery rows are part of training, not a deviation from it.`,
+      `Aim for 8+ hours of sleep tonight. You're averaging ${avgSleepHours}h and a single good night can shift the trend.`,
+      `Check in with your coach about load for the next 48 hours. Small adjustments now prevent bigger setbacks later.`,
+    ],
+  }
+
+  const pick = (arr) => arr[(checkin.mood + checkin.fatigue) % arr.length]
+
+  return [
+    { title: "You're Not Alone", highlight: null, body: pick(notAlone[statusKey]) },
+    { title: "You've Come Back Before", highlight: null, body: pick(comeback[statusKey]) },
+    { title: "What You Can Do Now", highlight: null, body: actions[statusKey] },
+  ]
+}
+
+/**
+ * Main export: Get Low Period Support cards for an athlete
+ */
+export async function getLowPeriodSupport(athlete, checkin) {
+  if (IS_DEMO_MODE) {
+    await new Promise(resolve => setTimeout(resolve, 800))
+    return {
+      cards: getFallbackLowPeriodSupport(athlete, checkin),
+      isDemo: true,
+    }
+  }
+
+  const aiCards = await generateAILowPeriodSupport(athlete, checkin)
+
+  if (aiCards && Array.isArray(aiCards) && aiCards.length >= 3) {
+    return { cards: aiCards, isDemo: false }
+  }
+
+  return {
+    cards: getFallbackLowPeriodSupport(athlete, checkin),
+    isDemo: true,
   }
 }
 

@@ -1,3 +1,4 @@
+import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Activity, Heart, Moon, BarChart3 } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
@@ -7,35 +8,178 @@ import { ATHLETES } from '../../data/mockData'
 
 const DEMO_ATHLETE = ATHLETES[2] // Morgan
 
+const RANGE_OPTIONS = [
+  { value: '7d', label: '7 Days' },
+  { value: '30d', label: '30 Days' },
+  { value: '180d', label: '6 Months' },
+]
+
+function lerp(a, b, t) { return a + (b - a) * t }
+
+function generateRangeData(athlete, range) {
+  const h7 = athlete.health
+  const t7 = athlete.training
+
+  if (range === '7d') {
+    return {
+      health: h7,
+      training: t7,
+      labelPrefix: '7-Day',
+      trendLabel: '7-Day',
+    }
+  }
+
+  // Healthy baseline (Day 0 — before decline)
+  const baseH = { hrv: 58, rhr: 54, sleepHours: 7.2, sleepDeep: 20, sleepREM: 24, spo2: 97.5, respiratoryRate: 14.2, skinTemp: 36.4 }
+  const baseT = { distance: 8200, avgSplit: 112, avgSPM: 28, maxHR: 170, avgHR: 145, duration: 48 }
+
+  if (range === '30d') {
+    const health = []
+    const training = []
+    // Day 1-23: interpolate from healthy baseline to h7[0]
+    for (let i = 0; i < 23; i++) {
+      const t = i / 22
+      health.push({
+        day: `Jul ${i + 1}`,
+        hrv: Math.round(lerp(baseH.hrv, h7[0].hrv, t) * 10) / 10,
+        rhr: Math.round(lerp(baseH.rhr, h7[0].rhr, t)),
+        sleepHours: Math.round(lerp(baseH.sleepHours, h7[0].sleepHours, t) * 10) / 10,
+        sleepDeep: Math.round(lerp(baseH.sleepDeep, h7[0].sleepDeep, t)),
+        sleepREM: Math.round(lerp(baseH.sleepREM, h7[0].sleepREM, t)),
+        spo2: Math.round(lerp(baseH.spo2, h7[0].spo2, t) * 10) / 10,
+        respiratoryRate: Math.round(lerp(baseH.respiratoryRate, h7[0].respiratoryRate, t) * 10) / 10,
+        skinTemp: Math.round(lerp(baseH.skinTemp, h7[0].skinTemp, t) * 10) / 10,
+      })
+      training.push({
+        day: `Jul ${i + 1}`,
+        distance: Math.round(lerp(baseT.distance, t7[0].distance, t)),
+        avgSplit: Math.round(lerp(baseT.avgSplit, t7[0].avgSplit, t) * 10) / 10,
+        avgSPM: Math.round(lerp(baseT.avgSPM, t7[0].avgSPM, t)),
+        maxHR: Math.round(lerp(baseT.maxHR, t7[0].maxHR, t)),
+        avgHR: Math.round(lerp(baseT.avgHR, t7[0].avgHR, t)),
+        duration: Math.round(lerp(baseT.duration, t7[0].duration, t)),
+      })
+    }
+    // Day 24-30: actual Morgan data
+    for (let i = 0; i < 7; i++) {
+      health.push({ ...h7[i], day: `Jul ${i + 24}` })
+      training.push({ ...t7[i], day: `Jul ${i + 24}` })
+    }
+    return { health, training, labelPrefix: '30-Day', trendLabel: '30-Day' }
+  }
+
+  // 180d — 30 points, every 6 days
+  const health = []
+  const training = []
+  for (let i = 0; i < 24; i++) {
+    const jitter = (Math.sin(i * 1.7) + Math.cos(i * 0.9)) * 1.5
+    health.push({
+      day: `Jun ${i * 6 + 1}`,
+      hrv: Math.round((56 + jitter) * 10) / 10,
+      rhr: Math.round(55 + jitter * 0.5),
+      sleepHours: Math.round((7.0 + jitter * 0.15) * 10) / 10,
+      sleepDeep: Math.round(19 + jitter * 0.8),
+      sleepREM: Math.round(23 + jitter * 0.6),
+      spo2: Math.round((97.2 + jitter * 0.15) * 10) / 10,
+      respiratoryRate: Math.round((14.5 + jitter * 0.2) * 10) / 10,
+      skinTemp: Math.round((36.5 + jitter * 0.08) * 10) / 10,
+    })
+    training.push({
+      day: `Jun ${i * 6 + 1}`,
+      distance: Math.round(8000 + jitter * 400),
+      avgSplit: Math.round((113 + jitter * 0.4) * 10) / 10,
+      avgSPM: Math.round(28 + jitter * 0.2),
+      maxHR: Math.round(170 + jitter * 2),
+      avgHR: Math.round(146 + jitter * 1.5),
+      duration: Math.round(46 + jitter * 2),
+    })
+  }
+  for (let i = 0; i < 6; i++) {
+    const t = i / 5
+    health.push({
+      day: `Jul ${i * 6 + 1}`,
+      hrv: Math.round(lerp(h7[0].hrv, h7[6].hrv, t) * 10) / 10,
+      rhr: Math.round(lerp(h7[0].rhr, h7[6].rhr, t)),
+      sleepHours: Math.round(lerp(h7[0].sleepHours, h7[6].sleepHours, t) * 10) / 10,
+      sleepDeep: Math.round(lerp(h7[0].sleepDeep, h7[6].sleepDeep, t)),
+      sleepREM: Math.round(lerp(h7[0].sleepREM, h7[6].sleepREM, t)),
+      spo2: Math.round(lerp(h7[0].spo2, h7[6].spo2, t) * 10) / 10,
+      respiratoryRate: Math.round(lerp(h7[0].respiratoryRate, h7[6].respiratoryRate, t) * 10) / 10,
+      skinTemp: Math.round(lerp(h7[0].skinTemp, h7[6].skinTemp, t) * 10) / 10,
+    })
+    training.push({
+      day: `Jul ${i * 6 + 1}`,
+      distance: Math.round(lerp(t7[0].distance, t7[6].distance, t)),
+      avgSplit: Math.round(lerp(t7[0].avgSplit, t7[6].avgSplit, t) * 10) / 10,
+      avgSPM: Math.round(lerp(t7[0].avgSPM, t7[6].avgSPM, t)),
+      maxHR: Math.round(lerp(t7[0].maxHR, t7[6].maxHR, t)),
+      avgHR: Math.round(lerp(t7[0].avgHR, t7[6].avgHR, t)),
+      duration: Math.round(lerp(t7[0].duration, t7[6].duration, t)),
+    })
+  }
+  return { health, training, labelPrefix: '6-Month', trendLabel: '6-Month' }
+}
+
 export default function AthleteTrends() {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
+  const [timeRange, setTimeRange] = useState('7d')
+
+  const data = useMemo(() => generateRangeData(DEMO_ATHLETE, timeRange), [timeRange])
 
   return (
     <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
       <Sidebar role="athlete" />
       <div className="flex-1 flex flex-col min-h-[100dvh] overflow-auto">
         <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1200px] mx-auto w-full space-y-6">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <h2 className="text-xl md:text-2xl font-bold text-pivot-900 dark:text-white tracking-tight">Health Trends</h2>
-            <p className="text-sm text-pivot-500 dark:text-slate-400 mt-1">Long-term analysis of your biometric data</p>
+          {/* Header with time-range selector */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-pivot-900 dark:text-white tracking-tight">Health Trends</h2>
+              <p className="text-sm text-pivot-500 dark:text-slate-400 mt-1">Long-term analysis of your biometric data</p>
+            </div>
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-pivot-50 dark:bg-slate-800/50 border border-pivot-100 dark:border-slate-700/30">
+              {RANGE_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setTimeRange(value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95 ${
+                    timeRange === value
+                      ? 'bg-white dark:bg-slate-700 text-pivot-900 dark:text-white shadow-sm'
+                      : 'text-pivot-400 dark:text-slate-400 hover:text-pivot-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </motion.div>
 
           {/* Health Trends */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <motion.div
+            key={`health-${timeRange}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
             <HealthTrendChart
-              data={DEMO_ATHLETE.health}
-              title="7-Day Health Trends — HRV, RHR, Sleep"
+              data={data.health}
+              title={`${data.labelPrefix} Health Trends — HRV, RHR, Sleep`}
               metrics={['hrv', 'rhr', 'sleepHours']}
               darkMode={isDark}
             />
           </motion.div>
 
           {/* Training Trends */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+          <motion.div
+            key={`training-${timeRange}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+          >
             <HealthTrendChart
-              data={DEMO_ATHLETE.training}
-              title="7-Day Training Load"
+              data={data.training}
+              title={`${data.labelPrefix} Training Load`}
               metrics={['distance', 'avgSplit']}
               darkMode={isDark}
             />
@@ -52,21 +196,21 @@ export default function AthleteTrends() {
                 <div className="flex items-center justify-between p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-2">
                     <Heart size={14} className="text-rose-500" />
-                    <span className="text-xs text-pivot-600 dark:text-slate-300">HRV 7-Day Trend</span>
+                    <span className="text-xs text-pivot-600 dark:text-slate-300">HRV {data.trendLabel} Trend</span>
                   </div>
                   <span className="text-xs font-semibold text-rose-500">↓ Declining</span>
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-2">
                     <Activity size={14} className="text-amber-500" />
-                    <span className="text-xs text-pivot-600 dark:text-slate-300">RHR 7-Day Trend</span>
+                    <span className="text-xs text-pivot-600 dark:text-slate-300">RHR {data.trendLabel} Trend</span>
                   </div>
                   <span className="text-xs font-semibold text-amber-500">↑ Rising</span>
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-2">
                     <Moon size={14} className="text-rose-500" />
-                    <span className="text-xs text-pivot-600 dark:text-slate-300">Sleep 7-Day Trend</span>
+                    <span className="text-xs text-pivot-600 dark:text-slate-300">Sleep {data.trendLabel} Trend</span>
                   </div>
                   <span className="text-xs font-semibold text-rose-500">↓ Declining</span>
                 </div>

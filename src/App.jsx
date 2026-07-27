@@ -37,8 +37,12 @@ function PageLoader() {
 }
 
 function ProtectedRoute({ allowedRole }) {
-  const { user } = useUser()
+  const { user, authRestored } = useUser()
   const location = useLocation()
+
+  if (!authRestored) {
+    return <PageLoader />
+  }
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />

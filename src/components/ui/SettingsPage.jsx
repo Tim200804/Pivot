@@ -216,24 +216,28 @@ export default function SettingsPage({ role }) {
                   </EditableField>
                 )}
                 {user.role === 'athlete' && (
-                  <EditableField label="Height / Weight" value={editing ? undefined : `${user.height || '—'}cm / ${user.weight || '—'}kg`}>
-                    {editing && (
-                      <div className="flex gap-2">
+                  <>
+                    <EditableField label="Height" value={editing ? undefined : `${user.height || '—'} cm`}>
+                      {editing && (
                         <input
                           value={editForm.height}
                           onChange={e => setEditForm(prev => ({ ...prev, height: e.target.value }))}
-                          className="flex-1 bg-white dark:bg-slate-800 border border-pivot-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm text-pivot-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
+                          className="w-full bg-white dark:bg-slate-800 border border-pivot-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm text-pivot-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
                           placeholder="cm"
                         />
+                      )}
+                    </EditableField>
+                    <EditableField label="Weight" value={editing ? undefined : `${user.weight || '—'} kg`}>
+                      {editing && (
                         <input
                           value={editForm.weight}
                           onChange={e => setEditForm(prev => ({ ...prev, weight: e.target.value }))}
-                          className="flex-1 bg-white dark:bg-slate-800 border border-pivot-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm text-pivot-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
+                          className="w-full bg-white dark:bg-slate-800 border border-pivot-200 dark:border-slate-600 rounded-lg px-3 py-1.5 text-sm text-pivot-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
                           placeholder="kg"
                         />
-                      </div>
-                    )}
-                  </EditableField>
+                      )}
+                    </EditableField>
+                  </>
                 )}
               </div>
             </motion.div>

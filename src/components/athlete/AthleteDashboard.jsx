@@ -17,6 +17,7 @@ import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
 import { useMoodColors } from '../../context/MoodColorContext'
 import { ATHLETES } from '../../data/mockData'
+import { getLowPeriodSupport } from '../../utils/aiCoach'
 
 const DEMO_ATHLETE = ATHLETES[2]
 
@@ -74,6 +75,26 @@ export default function AthleteDashboard() {
     fatigue: latestCheckin.fatigue,
     journal: latestCheckin.journal || '',
   })
+
+  // Low Period Support — AI-generated cards
+  const [lowPeriodData, setLowPeriodData] = useState(null)
+  const [lowPeriodLoading, setLowPeriodLoading] = useState(false)
+  const [lowPeriodDemo, setLowPeriodDemo] = useState(false)
+
+  useEffect(() => {
+    if (athlete.status === 'danger' || athlete.status === 'urgent') {
+      setLowPeriodLoading(true)
+      getLowPeriodSupport(athlete, checkinForm)
+        .then(result => {
+          setLowPeriodData(result.cards)
+          setLowPeriodDemo(result.isDemo)
+        })
+        .catch(() => {
+          setLowPeriodData(null)
+        })
+        .finally(() => setLowPeriodLoading(false))
+    }
+  }, [athlete.status, athlete.id])
 
   const showToast = useCallback((msg) => {
     setToast({ visible: true, message: msg })
@@ -538,42 +559,63 @@ export default function AthleteDashboard() {
               transition={{ delay: 0.45 }}
               className="glass-card p-6 border-l-4 border-l-accent-amber"
             >
-              <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300 mb-4">
-                Low Period Support
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/20 hover:shadow-md transition-shadow cursor-pointer">
-                  <p className="text-xs font-semibold text-accent-blue mb-2">You're Not Alone</p>
-                  <p className="text-2xl font-bold text-pivot-900 dark:text-white mb-1">44%</p>
-                  <p className="text-xs text-pivot-500 dark:text-slate-400 leading-relaxed">
-                    of student-athletes report mental health symptoms. What you're feeling is common — and temporary.
-                  </p>
-                </div>
-                <div className="p-4 rounded-2xl bg-teal-50/50 dark:bg-teal-900/10 border border-teal-100 dark:border-teal-800/20 hover:shadow-md transition-shadow cursor-pointer">
-                  <p className="text-xs font-semibold text-accent-teal mb-2">You've Come Back Before</p>
-                  <p className="text-2xl font-bold text-pivot-900 dark:text-white mb-1">3 times</p>
-                  <p className="text-xs text-pivot-500 dark:text-slate-400 leading-relaxed">
-                    Your data shows you've navigated through similar low periods before. Your average recovery: 5 days.
-                  </p>
-                </div>
-                <div className="p-4 rounded-2xl bg-amber-50/50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/20 hover:shadow-md transition-shadow cursor-pointer">
-                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-2">What You Can Do Now</p>
-                  <ul className="space-y-2 text-xs text-pivot-500 dark:text-slate-400">
-                    <li className="flex items-start gap-2">
-                      <span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                      Consider a lighter erg day — recovery rows are part of training
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                      Try 5 minutes of box breathing (4-4-4-4) before bed
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                      Reach out to your coxswain or coach — you don't have to carry this alone
-                    </li>
-                  </ul>
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">
+                  Low Period Support
+                </h3>
+                {lowPeriodDemo && (
+                  <span className="text-[10px] font-medium bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                    Demo Mode
+                  </span>
+                )}
               </div>
+
+              {lowPeriodLoading ? (
+                <div className="flex items-center gap-3 py-6">
+                  <div className="flex gap-1">
+                    {[0, 1, 2].map(i => (
+                      <motion.div
+                        key={i}
+                        className="w-2 h-2 rounded-full bg-amber-400"
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-sm text-pivot-500 dark:text-slate-400">Generating personalized support...</span>
+                </div>
+              ) : lowPeriodData ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {lowPeriodData.map((card, idx) => {
+                    const themes = [
+                      { border: 'border-blue-100 dark:border-blue-800/20', bg: 'bg-blue-50/50 dark:bg-blue-900/10', label: 'text-accent-blue' },
+                      { border: 'border-teal-100 dark:border-teal-800/20', bg: 'bg-teal-50/50 dark:bg-teal-900/10', label: 'text-accent-teal' },
+                      { border: 'border-amber-100 dark:border-amber-800/20', bg: 'bg-amber-50/50 dark:bg-amber-900/10', label: 'text-amber-600 dark:text-amber-400' },
+                    ]
+                    const theme = themes[idx % 3]
+                    return (
+                      <div key={idx} className={`p-4 rounded-2xl ${theme.bg} border ${theme.border} hover:shadow-md transition-shadow`}>
+                        <p className={`text-xs font-semibold ${theme.label} mb-2`}>{card.title}</p>
+                        {card.highlight && (
+                          <p className="text-2xl font-bold text-pivot-900 dark:text-white mb-1">{card.highlight}</p>
+                        )}
+                        {Array.isArray(card.body) ? (
+                          <ul className="space-y-2 text-xs text-pivot-500 dark:text-slate-400">
+                            {card.body.map((item, i) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <span className="w-1 h-1 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-pivot-500 dark:text-slate-400 leading-relaxed">{card.body}</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
             </motion.div>
           )}
 
