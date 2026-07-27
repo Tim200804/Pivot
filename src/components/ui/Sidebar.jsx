@@ -2,10 +2,9 @@ import { useMemo, memo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, ClipboardCheck, TrendingUp,
-  Bell, Settings, LogOut, Sun, Moon, ChevronLeft, ChevronRight,
-  GraduationCap, Clock
+  Bell, Settings, LogOut, ChevronLeft, ChevronRight,
+  GraduationCap
 } from 'lucide-react'
-import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
 import { useState } from 'react'
@@ -26,7 +25,6 @@ const coachLinks = [
 const Sidebar = memo(function Sidebar({ role }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { theme, themeMode, cycleTheme, isAuto } = useTheme()
   const { user, logout } = useUser()
   const { totalAlerts, alertCount } = useAlerts()
   const [collapsed, setCollapsed] = useState(false)
@@ -42,9 +40,6 @@ const Sidebar = memo(function Sidebar({ role }) {
     logout()
     navigate('/login')
   }
-
-  const ThemeIcon = isAuto ? Clock : (theme === 'dark' ? Sun : Moon)
-  const themeLabel = isAuto ? 'Auto' : (theme === 'dark' ? 'Light' : 'Dark')
 
   return (
     <aside
@@ -145,20 +140,6 @@ const Sidebar = memo(function Sidebar({ role }) {
         >
           <Settings size={20} />
           {!collapsed && <span>Settings</span>}
-        </button>
-
-        <button
-          onClick={cycleTheme}
-          className={`sidebar-link sidebar-link-inactive w-full ${collapsed ? 'justify-center' : ''}`}
-          title={collapsed ? `${themeLabel} mode` : undefined}
-        >
-          <ThemeIcon size={20} />
-          {!collapsed && (
-            <span className="flex items-center gap-1">
-              Theme
-              <span className="text-[11px] opacity-50 ml-auto">{themeLabel}</span>
-            </span>
-          )}
         </button>
 
         <button
