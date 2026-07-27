@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown, Send, X } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
@@ -49,12 +50,34 @@ const PAGE_SIZE = 8
 
 export default function CoachAlertCenter() {
   const { alerts, totalAlerts, alertCount } = useAlerts()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialQuery = searchParams.get('q') || ''
   const [dismissedAlerts, setDismissedAlerts] = useState(new Set())
   const [actionMenu, setActionMenu] = useState(null)
   const [toast, setToast] = useState({ visible: false, message: '', variant: 'success' })
   const [historyPage, setHistoryPage] = useState(1)
   const [historyStatus, setHistoryStatus] = useState('all') // 'all' | 'active' | 'resolved'
-  const [historySearch, setHistorySearch] = useState('')
+  const [historySearch, setHistorySearch] = useState(initialQuery)
+
+  // Keep search box in sync with URL `?q=` so deep-links from the dashboard work
+  useEffect(() => {
+    const q = searchParams.get('q') || ''
+    if (q !== historySearch) {
+      setHistorySearch(q)
+      setHistoryPage(1)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const updateHistorySearch = (next) => {
+    setHistorySearch(next)
+    setHistoryPage(1)
+    // Reflect into URL so the link can be shared / reloaded
+    const params = new URLSearchParams(searchParams)
+    if (next) params.set('q', next)
+    else params.delete('q')
+    setSearchParams(params, { replace: true })
+  }
 
   // Athletes directory + send-message modal state
   const [athletes, setAthletes] = useState([])
@@ -276,7 +299,7 @@ export default function CoachAlertCenter() {
                   <input
                     type="text"
                     value={historySearch}
-                    onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1) }}
+                    onChange={(e) => updateHistorySearch(e.target.value)}
                     placeholder="Search by name or type..."
                     className="pl-8 pr-3 py-1.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-teal/40 w-48"
                   />
@@ -295,7 +318,7 @@ export default function CoachAlertCenter() {
                 </div>
                 {(historySearch || historyStatus !== 'all') && (
                   <button
-                    onClick={() => { setHistorySearch(''); setHistoryStatus('all'); setHistoryPage(1) }}
+                    onClick={() => { updateHistorySearch(''); setHistoryStatus('all'); setHistoryPage(1) }}
                     className="text-xs text-pivot-400 hover:text-pivot-600 dark:hover:text-slate-300 transition-colors px-2"
                   >
                     Clear

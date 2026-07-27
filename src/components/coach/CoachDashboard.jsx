@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, Activity, Bell, TrendingUp, Heart, Moon, AlertTriangle,
   Menu, X, Search, ChevronRight, XCircle, BarChart3, CheckCircle,
-  GraduationCap, Ruler, Weight, ClipboardCheck, MoreVertical, MessageCircle, CheckCheck
+  GraduationCap, Ruler, Weight, ClipboardCheck, MoreVertical, MessageCircle, CheckCheck,
+  History, ArrowRight
 } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
@@ -282,6 +283,12 @@ export default function CoachDashboard() {
                   {alertCount.black > 0 && <span className="text-[10px] font-bold bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 px-2 py-0.5 rounded-full">{alertCount.black}</span>}
                   {alertCount.red > 0 && <span className="text-[10px] font-bold bg-red-100 dark:bg-red-900/30 text-red-600 px-2 py-0.5 rounded-full">{alertCount.red}</span>}
                   {alertCount.yellow > 0 && <span className="text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-600 px-2 py-0.5 rounded-full">{alertCount.yellow}</span>}
+                  <button
+                    onClick={() => navigate('/coach/alerts')}
+                    className="ml-1 text-[11px] font-medium text-accent-teal hover:text-teal-600 dark:text-teal-400 dark:hover:text-teal-300 transition-colors flex items-center gap-0.5"
+                  >
+                    View all <ArrowRight size={11} />
+                  </button>
                 </div>
               </div>
 
@@ -351,6 +358,12 @@ export default function CoachDashboard() {
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors"
                               >
                                 <MessageCircle size={14} className="text-accent-blue" /> View Athlete
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setActionMenu(null); navigate(`/coach/alerts?q=${encodeURIComponent(alert.athleteName)}`) }}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors"
+                              >
+                                <History size={14} className="text-pivot-500" /> View History
                               </button>
                             </motion.div>
                           )}
