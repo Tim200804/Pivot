@@ -4,13 +4,15 @@ import { motion } from 'framer-motion'
 import { ArrowRight, ShipWheel, Dumbbell, Search, GraduationCap, Users, Ruler, Weight, ChevronDown, CheckCircle2, Lock, Loader2 } from 'lucide-react'
 import { useUser, COACH_ROLES } from '../../context/UserContext'
 import { isMockMode } from '../../config/api'
-import { apiSearchSchools } from '../../config/api'
+import { apiSearchSchools, apiCheckEmail } from '../../config/api'
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
   exit: { opacity: 0, y: -8, transition: { duration: 0.2 } },
 }
+
+const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
 const glassInput = "w-full px-4 py-3 rounded-2xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-pivot-900 dark:text-white placeholder-pivot-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-accent-blue/40 focus:border-accent-blue transition-all text-sm"
 
@@ -34,6 +36,9 @@ export default function SignUpForm({ role, sport, setSport }) {
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [emailValid, setEmailValid] = useState(true)
+  const [emailAvailable, setEmailAvailable] = useState(true)
+  const [emailChecking, setEmailChecking] = useState(false)
 
   const schoolRef = useRef(null)
   const positionRef = useRef(null)
@@ -77,6 +82,36 @@ export default function SignUpForm({ role, sport, setSport }) {
     return () => clearTimeout(timer)
   }, [schoolSearch])
 
+  // Email format + availability check (real mode only)
+  useEffect(() => {
+    if (isMockMode()) return
+    const trimmed = email.trim()
+    if (!trimmed) {
+      setEmailValid(true)
+      setEmailAvailable(true)
+      return
+    }
+    const formatOk = EMAIL_RE.test(trimmed)
+    setEmailValid(formatOk)
+    if (!formatOk) {
+      setEmailAvailable(true)
+      setEmailChecking(false)
+      return
+    }
+    setEmailChecking(true)
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiCheckEmail(trimmed)
+        setEmailAvailable(!!data.available)
+      } catch {
+        setEmailAvailable(true)
+      } finally {
+        setEmailChecking(false)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [email])
+
   const mockSchools = getSchoolsForSport(sport)
   const filteredMockSchools = schoolSearch
     ? mockSchools.filter(s => s.name.toLowerCase().includes(schoolSearch.toLowerCase()))
@@ -86,12 +121,13 @@ export default function SignUpForm({ role, sport, setSport }) {
   const positions = getPositionsForSport(sport)
 
   const isFormValid = useMemo(() => {
-    const base = school && teamName && name && email
+    const base = school && teamName && name && email && emailValid
+    const emailOk = !isMockMode() ? emailValid && emailAvailable && !emailChecking : true
     const hasPassword = !isMockMode() ? password.length >= 6 && password === confirmPassword : true
     return role === 'athlete'
-      ? base && position && height && weight && hasPassword
-      : base && coachRole && hasPassword
-  }, [role, school, teamName, name, email, position, height, weight, coachRole, password, confirmPassword])
+      ? base && position && height && weight && hasPassword && emailOk
+      : base && coachRole && hasPassword && emailOk
+  }, [role, school, teamName, name, email, emailValid, emailAvailable, emailChecking, position, height, weight, coachRole, password, confirmPassword])
 
   const handleSportChange = (newSport) => {
     setSport(newSport)
@@ -105,6 +141,14 @@ export default function SignUpForm({ role, sport, setSport }) {
     setError('')
 
     if (!isMockMode()) {
+      if (!emailValid) {
+        setError('Please enter a valid email address')
+        return
+      }
+      if (!emailAvailable) {
+        setError('This email is already registered')
+        return
+      }
       if (password.length < 6) {
         setError('Password must be at least 6 characters')
         return
@@ -193,7 +237,21 @@ export default function SignUpForm({ role, sport, setSport }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Email <span className="text-red-400">*</span></label>
-            <input type="email" name={`${inputPrefix}-email`} autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isAthlete ? 'alex@team.edu' : 'coach@team.edu'} className={glassInput} required />
+            <div className="relative">
+              <input type="text" inputMode="email" name={`${inputPrefix}-email`} autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={isAthlete ? 'alex@team.edu' : 'coach@team.edu'} className={glassInput + (email && !isMockMode() ? (!emailValid ? ' border-red-400 focus:ring-red-400/40' : emailAvailable ? ' border-green-400 focus:ring-green-400/40' : ' border-red-400 focus:ring-red-400/40') : '')} required />
+              {!isMockMode() && email && emailChecking && (
+                <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-pivot-400 animate-spin" />
+              )}
+              {!isMockMode() && email && !emailChecking && !emailValid && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-red-400 font-medium">Invalid</span>
+              )}
+              {!isMockMode() && email && !emailChecking && emailValid && !emailAvailable && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-red-400 font-medium">Taken</span>
+              )}
+              {!isMockMode() && email && !emailChecking && emailValid && emailAvailable && (
+                <CheckCircle2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-green-400" />
+              )}
+            </div>
           </div>
         </div>
         {isAthlete ? (

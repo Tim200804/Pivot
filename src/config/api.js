@@ -116,6 +116,10 @@ export async function apiGetMe() {
   return apiFetch('/api/auth/me', { method: 'GET' })
 }
 
+export async function apiCheckEmail(email) {
+  return apiFetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`, { method: 'GET' })
+}
+
 /* ─── Schools API ─── */
 
 export async function apiSearchSchools(query) {
