@@ -34,7 +34,18 @@ const alertHistory = [
   { id: 'h5', athleteName: 'Morgan Smith', level: 'yellow', type: 'Recovery Deficiency', date: 'Jul 14, 10:00', resolved: true },
   { id: 'h6', athleteName: 'Jordan Lee', level: 'yellow', type: 'Sleep Deprivation', date: 'Jul 13, 07:30', resolved: true },
   { id: 'h7', athleteName: 'Taylor Brooks', level: 'yellow', type: 'Recovery Deficiency', date: 'Jul 12, 16:00', resolved: true },
+  { id: 'h8', athleteName: 'Casey Park', level: 'yellow', type: 'Training Load Spike', date: 'Jul 11, 18:45', resolved: true },
+  { id: 'h9', athleteName: 'Morgan Smith', level: 'red', type: 'Mood Decline', date: 'Jul 10, 12:00', resolved: true },
+  { id: 'h10', athleteName: 'Taylor Brooks', level: 'yellow', type: 'Mild HRV Drop', date: 'Jul 09, 09:15', resolved: true },
+  { id: 'h11', athleteName: 'Jordan Lee', level: 'yellow', type: 'Sleep Inconsistency', date: 'Jul 08, 22:30', resolved: true },
+  { id: 'h12', athleteName: 'Casey Park', level: 'yellow', type: 'RPE Anomaly', date: 'Jul 07, 15:00', resolved: true },
+  { id: 'h13', athleteName: 'Morgan Smith', level: 'red', type: 'Burnout Warning', date: 'Jul 06, 11:00', resolved: true },
+  { id: 'h14', athleteName: 'Taylor Brooks', level: 'yellow', type: 'Recovery Lag', date: 'Jul 05, 17:30', resolved: true },
+  { id: 'h15', athleteName: 'Jordan Lee', level: 'yellow', type: 'Hydration Deficit', date: 'Jul 04, 14:20', resolved: true },
+  { id: 'h16', athleteName: 'Casey Park', level: 'yellow', type: 'Missed Check-in', date: 'Jul 03, 08:00', resolved: true },
 ]
+
+const PAGE_SIZE = 8
 
 export default function CoachAlertCenter() {
   const { alerts, totalAlerts, alertCount } = useAlerts()
@@ -42,6 +53,7 @@ export default function CoachAlertCenter() {
   const [dismissedAlerts, setDismissedAlerts] = useState(new Set())
   const [actionMenu, setActionMenu] = useState(null)
   const [toast, setToast] = useState({ visible: false, message: '', variant: 'success' })
+  const [historyPage, setHistoryPage] = useState(1)
 
   // Athletes directory + send-message modal state
   const [athletes, setAthletes] = useState([])
@@ -279,30 +291,68 @@ export default function CoachAlertCenter() {
 
           {/* Alert History */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Clock size={14} />
-              Alert History
-            </h3>
-            <div className="glass-card divide-y divide-pivot-100 dark:divide-slate-700/30">
-              {alertHistory.map((item) => (
-                <div key={item.id} className="p-4 flex items-center justify-between hover:bg-pivot-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer active:scale-[0.99]">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-3 h-3 rounded-full shrink-0 ${
-                      item.level === 'yellow' ? 'bg-amber-400' :
-                      item.level === 'red' ? 'bg-rose-500' :
-                      'bg-blue-400'
-                    }`} />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-medium text-pivot-700 dark:text-slate-200 truncate">{item.athleteName}</span>
-                        <span className="text-xs text-pivot-400 truncate">{item.type}</span>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <Clock size={14} />
+                Alert History
+                <span className="text-pivot-400 normal-case font-normal">({alertHistory.length})</span>
+              </h3>
+            </div>
+            <div className="glass-card overflow-hidden">
+              <div className="max-h-[420px] overflow-y-auto divide-y divide-pivot-100 dark:divide-slate-700/30 custom-scrollbar">
+                {(() => {
+                  const totalPages = Math.max(1, Math.ceil(alertHistory.length / PAGE_SIZE))
+                  const safePage = Math.min(historyPage, totalPages)
+                  const start = (safePage - 1) * PAGE_SIZE
+                  const pageItems = alertHistory.slice(start, start + PAGE_SIZE)
+                  return pageItems.map((item) => (
+                  <div key={item.id} className="p-4 flex items-center justify-between hover:bg-pivot-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer active:scale-[0.99]">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-3 h-3 rounded-full shrink-0 ${
+                        item.level === 'yellow' ? 'bg-amber-400' :
+                        item.level === 'red' ? 'bg-rose-500' :
+                        item.level === 'black' ? 'bg-slate-800 dark:bg-slate-300' :
+                        'bg-blue-400'
+                      }`} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-medium text-pivot-700 dark:text-slate-200 truncate">{item.athleteName}</span>
+                          <span className="text-xs text-pivot-400 truncate">{item.type}</span>
+                        </div>
+                        <span className="text-xs text-pivot-400">{item.date}</span>
                       </div>
-                      <span className="text-xs text-pivot-400">{item.date}</span>
                     </div>
+                    <StatusPill status={item.resolved ? 'good' : 'warning'} />
                   </div>
-                  <StatusPill status={item.resolved ? 'good' : 'warning'} />
-                </div>
-              ))}
+                  ))
+                })()}
+              </div>
+              {alertHistory.length > PAGE_SIZE && (() => {
+                const totalPages = Math.ceil(alertHistory.length / PAGE_SIZE)
+                const safePage = Math.min(historyPage, totalPages)
+                return (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-pivot-100 dark:border-slate-700/30 bg-pivot-50/40 dark:bg-slate-800/30">
+                    <button
+                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                      disabled={safePage === 1}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-pivot-600 dark:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight size={12} className="rotate-180" /> Prev
+                    </button>
+                    <span className="text-xs text-pivot-500 dark:text-slate-400">
+                      Page <span className="font-semibold text-pivot-700 dark:text-slate-200">{safePage}</span> of {totalPages}
+                      <span className="text-pivot-400 ml-1">· {alertHistory.length} total</span>
+                    </span>
+                    <button
+                      onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
+                      disabled={safePage === totalPages}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-pivot-600 dark:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Next <ChevronRight size={12} />
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           </motion.div>
 
