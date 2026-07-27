@@ -272,8 +272,8 @@ export default function CoachDashboard() {
           {/* Alert Queue + Roster */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Alert Queue */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="lg:col-span-1 glass-card p-5">
-              <div className="flex items-center justify-between mb-4">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="lg:col-span-1 glass-card p-5 flex flex-col max-h-[calc(100vh-220px)]">
+              <div className="flex items-center justify-between mb-4 shrink-0">
                 <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300 flex items-center gap-2">
                   <Bell size={16} />
                   Alert Queue
@@ -285,7 +285,7 @@ export default function CoachDashboard() {
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              <div className="space-y-2 overflow-y-auto pr-1 flex-1 custom-scrollbar">
                 {activeAlerts.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center mx-auto mb-3">
@@ -367,12 +367,12 @@ export default function CoachDashboard() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35 }}
-              className="lg:col-span-2"
+              className="lg:col-span-2 flex flex-col max-h-[calc(100vh-220px)]"
             >
-              <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+              <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider mb-3 shrink-0">
                 Athlete Roster
               </h3>
-              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+              <div className="space-y-3 overflow-y-auto pr-1 flex-1 custom-scrollbar">
                 {filteredAthletes.map((athlete, i) => (
                   <motion.button
                     key={athlete.id}
