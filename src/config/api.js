@@ -23,7 +23,7 @@ export function getApiBaseUrl() {
 
   if (import.meta.env.DEV) return '' // dev proxy
 
-  return 'https://web-production-98008.up.railway.app'
+  return 'https://pivot-backend-production-690b.up.railway.app'
 }
 
 export function setApiBaseUrl(url) {
