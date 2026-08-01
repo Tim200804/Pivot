@@ -21,15 +21,23 @@ export default function SignInForm({ role, sport, savedForRole }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const navigate = useNavigate()
-  const { login, findSavedProfile } = useUser()
+  const { login, logout, findSavedProfile } = useUser()
+
+  const roleMismatchMessage = (accountRole) => (
+    `This account is registered as a ${accountRole}. Please sign in from the ${accountRole} portal.`
+  )
 
   const handleQuickLogin = (profile) => {
-    if (isMockMode()) {
-      login(profile, true)
-      navigate(profile.role === 'athlete' ? '/athlete/onboarding' : '/coach')
-    } else {
+    if (!isMockMode()) {
       setError('Quick login is only available in mock mode')
+      return
     }
+    if (profile.role !== role) {
+      setError(roleMismatchMessage(profile.role))
+      return
+    }
+    login(profile, true)
+    navigate(profile.role === 'athlete' ? '/athlete/onboarding' : '/coach')
   }
 
   const handleSubmit = async (e) => {
@@ -41,42 +49,59 @@ export default function SignInForm({ role, sport, savedForRole }) {
       return
     }
 
+    if (!role || (role !== 'athlete' && role !== 'coach')) {
+      setError('Please select athlete or coach before signing in')
+      return
+    }
+
     if (isMockMode()) {
       const saved = findSavedProfile(email.trim())
       if (saved) {
-        login(saved, remember)
-      } else {
-        const displayName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-        const demoUser = {
-          role,
-          sport,
-          school: 'University of Pennsylvania',
-          teamName: sport === 'rowing' ? 'Varsity Heavyweight 8+' : 'Men\'s Varsity Basketball',
-          name: displayName,
-          email: email.trim(),
-          position: role === 'athlete' ? (sport === 'rowing' ? 'Stroke Seat' : 'Point Guard (PG)') : undefined,
-          height: role === 'athlete' ? 188 : undefined,
-          weight: role === 'athlete' ? 82 : undefined,
-          coachRole: role === 'coach' ? 'Head Coach' : undefined,
+        if (saved.role !== role) {
+          setError(roleMismatchMessage(saved.role))
+          return
         }
-        login(demoUser, remember)
+        login(saved, remember)
+        navigate(saved.role === 'athlete' ? '/athlete/onboarding' : '/coach')
+        return
       }
+
+      const displayName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      const demoUser = {
+        role,
+        sport,
+        school: 'University of Pennsylvania',
+        teamName: sport === 'rowing' ? 'Varsity Heavyweight 8+' : 'Men\'s Varsity Basketball',
+        name: displayName,
+        email: email.trim(),
+        position: role === 'athlete' ? (sport === 'rowing' ? 'Stroke Seat' : 'Point Guard (PG)') : undefined,
+        height: role === 'athlete' ? 188 : undefined,
+        weight: role === 'athlete' ? 82 : undefined,
+        coachRole: role === 'coach' ? 'Head Coach' : undefined,
+      }
+      login(demoUser, remember)
       navigate(role === 'athlete' ? '/athlete/onboarding' : '/coach')
       return
     }
 
-    // Real mode
+    // Real mode — send portal role so backend can enforce isolation
     if (!password) {
       setError('Please enter your password')
       return
     }
 
     setIsSubmitting(true)
-    const result = await login({ email: email.trim(), password })
+    const result = await login({ email: email.trim(), password, role })
     setIsSubmitting(false)
 
     if (result.success) {
-      navigate(result.user?.role === 'athlete' ? '/athlete/onboarding' : '/coach')
+      const userRole = result.user?.role
+      if (userRole && userRole !== role) {
+        logout()
+        setError(roleMismatchMessage(userRole))
+        return
+      }
+      navigate(userRole === 'athlete' ? '/athlete/onboarding' : '/coach')
     } else {
       setError(result.message || 'Login failed')
     }

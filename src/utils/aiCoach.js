@@ -1,9 +1,9 @@
 // AI Coach — Personalized psychological insight + chat with memory
 // Uses athlete's 7-day data + today's check-in + conversation history
+// Always calls the real Kimi-backed backend (/api/ai/*), in both mock and real auth modes.
+// Rule-based helpers are used only when the API is unreachable.
 
-import { apiFetch, isMockMode } from '../config/api'
-
-const IS_DEMO_MODE = isMockMode()
+import { apiAiFetch, apiAiStream } from '../config/api'
 
 const STORAGE_KEY = 'pivot_ai_chat_history'
 
@@ -64,11 +64,11 @@ Use "you" language. Be human, not robotic. Keep it under 60 words.`
  */
 async function generateAIInsight(athlete, checkin) {
   try {
-    const data = await apiFetch('/api/ai/insight', {
+    const data = await apiAiFetch('/api/ai/insight', {
       method: 'POST',
       body: JSON.stringify({ athlete, checkin }),
     })
-    return data.text
+    return data?.text || null
   } catch (error) {
     console.warn('AI insight backend failed, using fallback:', error.message)
     return null
@@ -80,11 +80,11 @@ async function generateAIInsight(athlete, checkin) {
  */
 async function generateAILowPeriodSupport(athlete, checkin) {
   try {
-    const data = await apiFetch('/api/ai/low-period-support', {
+    const data = await apiAiFetch('/api/ai/low-period-support', {
       method: 'POST',
       body: JSON.stringify({ athlete, checkin }),
     })
-    return data.cards
+    return data?.cards || null
   } catch (error) {
     console.warn('AI low period support backend failed, using fallback:', error.message)
     return null
@@ -92,17 +92,83 @@ async function generateAILowPeriodSupport(athlete, checkin) {
 }
 
 /**
- * Generate a chat response using AI API, with full conversation history
+ * Parse SSE body from /api/ai/chat. Calls onChunk(delta) for each content piece.
+ * Completes only after data: [DONE].
  */
-async function generateAIChatResponse(athlete, checkin, messages) {
+async function consumeChatSse(response, onChunk) {
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('Streaming not supported')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let fullText = ''
+  let sawDone = false
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split('\n')
+    buffer = parts.pop() ?? ''
+
+    for (const line of parts) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const payload = trimmed.slice(5).trim()
+      if (payload === '[DONE]') {
+        sawDone = true
+        break
+      }
+      try {
+        const parsed = JSON.parse(payload)
+        if (parsed.error) throw new Error(parsed.error)
+        if (parsed.content) {
+          fullText += parsed.content
+          onChunk?.(parsed.content, fullText)
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) continue
+        throw e
+      }
+    }
+    if (sawDone) break
+  }
+
+  if (!sawDone) {
+    // Drain any trailing buffer
+    const trimmed = buffer.trim()
+    if (trimmed.startsWith('data:')) {
+      const payload = trimmed.slice(5).trim()
+      if (payload === '[DONE]') sawDone = true
+    }
+  }
+
+  if (!sawDone && !fullText) {
+    throw new Error('Stream ended without [DONE]')
+  }
+
+  return fullText
+}
+
+/**
+ * Stream a chat response from Kimi via local Flask SSE.
+ * @param {function(string, string): void} [onChunk] - (delta, fullText) => void
+ */
+async function streamAIChatResponse(athlete, checkin, messages, onChunk) {
   try {
-    const data = await apiFetch('/api/ai/chat', {
+    const response = await apiAiStream('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({ athlete, checkin, messages }),
     })
-    return data.text
+    const text = await consumeChatSse(response, onChunk)
+    return text || null
   } catch (error) {
-    console.warn('AI chat backend failed, using fallback:', error.message)
+    // Surface rate-limit so UI can ask the user to retry (don't silently fall back)
+    if (error?.status === 429 || /rate limit|busy|concurrency/i.test(error?.message || '')) {
+      throw error
+    }
+    console.warn('AI chat stream failed, using fallback:', error.message)
     return null
   }
 }
@@ -382,16 +448,9 @@ function getFallbackLowPeriodSupport(athlete, checkin) {
 
 /**
  * Main export: Get Low Period Support cards for an athlete
+ * Always attempts the real Kimi API; fallback only on failure.
  */
 export async function getLowPeriodSupport(athlete, checkin) {
-  if (IS_DEMO_MODE) {
-    await new Promise(resolve => setTimeout(resolve, 800))
-    return {
-      cards: getFallbackLowPeriodSupport(athlete, checkin),
-      isDemo: true,
-    }
-  }
-
   const aiCards = await generateAILowPeriodSupport(athlete, checkin)
 
   if (aiCards && Array.isArray(aiCards) && aiCards.length >= 3) {
@@ -406,16 +465,9 @@ export async function getLowPeriodSupport(athlete, checkin) {
 
 /**
  * Main export: Get initial AI insight for an athlete
+ * Always attempts the real Kimi API; fallback only on failure.
  */
 export async function getAICoachInsight(athlete, checkin) {
-  if (IS_DEMO_MODE) {
-    await new Promise(resolve => setTimeout(resolve, 600))
-    return {
-      text: getFallbackInsight(athlete, checkin),
-      isDemo: true,
-    }
-  }
-
   const aiText = await generateAIInsight(athlete, checkin)
 
   if (aiText) {
@@ -429,19 +481,11 @@ export async function getAICoachInsight(athlete, checkin) {
 }
 
 /**
- * Main export: Get AI response in a conversation
+ * Main export: Stream AI response in a conversation.
+ * @param {function(string, string): void} [onChunk] - called with (delta, fullText) as tokens arrive
  */
-export async function getAIChatResponse(athlete, checkin, messages) {
-  if (IS_DEMO_MODE) {
-    await new Promise(resolve => setTimeout(resolve, 700))
-    const lastUser = messages.filter(m => m.role === 'user').pop()
-    const responseText = lastUser
-      ? getFallbackChatResponse(athlete, checkin, lastUser.text)
-      : getFallbackInsight(athlete, checkin)
-    return { text: responseText, isDemo: true }
-  }
-
-  const aiText = await generateAIChatResponse(athlete, checkin, messages)
+export async function getAIChatResponse(athlete, checkin, messages, onChunk) {
+  const aiText = await streamAIChatResponse(athlete, checkin, messages, onChunk)
 
   if (aiText) {
     return { text: aiText, isDemo: false }
@@ -453,5 +497,3 @@ export async function getAIChatResponse(athlete, checkin, messages) {
     isDemo: true,
   }
 }
-
-export { IS_DEMO_MODE }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, RefreshCw, AlertCircle, MessageSquare, Send, Trash2, X } from 'lucide-react'
-import { getAICoachInsight, getAIChatResponse, loadChatHistory, saveChatHistory, clearChatHistory, IS_DEMO_MODE } from '../../utils/aiCoach'
+import { getAICoachInsight, getAIChatResponse, loadChatHistory, saveChatHistory, clearChatHistory } from '../../utils/aiCoach'
 
 const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
   const [messages, setMessages] = useState([])
@@ -9,6 +9,7 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const inputRef = useRef(null)
@@ -49,6 +50,7 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
   const generateInitialInsight = useCallback(async () => {
     setLoading(true)
     setError(false)
+    setErrorMessage('')
     try {
       const result = await getAICoachInsight(athlete, checkin)
       setMessages([{
@@ -60,6 +62,7 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
       }])
     } catch (err) {
       setError(true)
+      setErrorMessage(err?.message || 'Unable to generate insight.')
     }
     setLoading(false)
   }, [athlete, checkin])
@@ -74,24 +77,49 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
       text,
       timestamp: Date.now(),
     }
+    const assistantId = `ai-${Date.now()}`
 
     const updatedMessages = [...messages, userMessage]
-    setMessages(updatedMessages)
+    setMessages([
+      ...updatedMessages,
+      {
+        id: assistantId,
+        role: 'assistant',
+        text: '',
+        isDemo: false,
+        streaming: true,
+        timestamp: Date.now(),
+      },
+    ])
     setInputValue('')
     setLoading(true)
     setError(false)
+    setErrorMessage('')
 
     try {
-      const result = await getAIChatResponse(athlete, checkin, updatedMessages)
-      setMessages(prev => [...prev, {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        text: result.text,
-        isDemo: result.isDemo,
-        timestamp: Date.now(),
-      }])
+      const result = await getAIChatResponse(
+        athlete,
+        checkin,
+        updatedMessages,
+        (_delta, fullText) => {
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId ? { ...m, text: fullText, streaming: true } : m
+          ))
+        },
+      )
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId
+          ? { ...m, text: result.text, isDemo: result.isDemo, streaming: false }
+          : m
+      ))
     } catch (err) {
+      setMessages(prev => prev.filter(m => !(m.id === assistantId && !m.text)))
       setError(true)
+      setErrorMessage(
+        err?.status === 429 || /rate limit|busy|concurrency/i.test(err?.message || '')
+          ? 'AI is busy (rate limit). Wait a second and try again.'
+          : (err?.message || 'Something went wrong. Please try again.')
+      )
     }
     setLoading(false)
   }, [inputValue, loading, messages, athlete, checkin])
@@ -131,9 +159,9 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
             <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">
               AI Coach Insight
             </h3>
-            {IS_DEMO_MODE && (
+            {messages.some(m => m.role === 'assistant' && m.isDemo) && (
               <span className="text-[10px] font-medium bg-violet-100 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-full">
-                Demo Mode
+                Offline fallback
               </span>
             )}
           </div>
@@ -190,7 +218,7 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
                   <p className="text-sm text-pivot-600 dark:text-slate-300 leading-relaxed">
                     {lastInsight}
                   </p>
-                  {IS_DEMO_MODE && messages[0]?.isDemo && (
+                  {messages[0]?.isDemo && (
                     <p className="text-[10px] text-pivot-400 dark:text-slate-500 italic">
                       (AI API unavailable — showing fallback insight)
                     </p>
@@ -240,16 +268,19 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
                           }`}
                         >
                           {msg.text}
+                          {msg.role === 'assistant' && msg.streaming && (
+                            <span className="inline-block w-1.5 h-3.5 ml-0.5 align-middle bg-violet-400 animate-pulse" />
+                          )}
                           {msg.role === 'assistant' && msg.isDemo && (
                             <span className="block mt-1 text-[10px] opacity-60 italic">
-                              (Demo mode)
+                              (Offline fallback)
                             </span>
                           )}
                         </div>
                       </motion.div>
                     ))
                   )}
-                  {loading && (
+                  {loading && !messages.some(m => m.streaming) && (
                     <div className="flex justify-start">
                       <div className="bg-pivot-50 dark:bg-slate-700/50 px-4 py-3 rounded-2xl rounded-bl-md border border-pivot-100 dark:border-slate-600/30 flex gap-1">
                         {[0, 1, 2].map(i => (
@@ -266,7 +297,7 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
                   {error && (
                     <div className="flex justify-center">
                       <span className="text-xs text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-full">
-                        Something went wrong. Please try again.
+                        {errorMessage || 'Something went wrong. Please try again.'}
                       </span>
                     </div>
                   )}
@@ -307,7 +338,9 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
                 {/* Footer actions */}
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[10px] text-pivot-400 dark:text-slate-500">
-                    {IS_DEMO_MODE ? 'Demo mode: responses are rule-based' : 'Powered by AI · Conversations are private'}
+                    {messages.some(m => m.role === 'assistant' && m.isDemo)
+                      ? 'AI unavailable — showing rule-based fallback'
+                      : 'Powered by Kimi AI · Conversations are private'}
                   </span>
                   <button
                     onClick={handleClear}
