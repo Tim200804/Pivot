@@ -39,7 +39,10 @@ function isRemoteDeployedBackend(url) {
 // Priority: 1) localStorage override  2) env var  3) dev proxy  4) production backend
 export function getApiBaseUrl() {
   const lsUrl = normalizeBaseUrl(localStorage.getItem('pivot_api_url'))
-  if (lsUrl) return lsUrl
+  // In production, ignore localhost localStorage overrides (common dev leftover)
+  if (lsUrl && !(!import.meta.env.DEV && (lsUrl.includes('localhost') || lsUrl.includes('127.0.0.1')))) {
+    return lsUrl
+  }
 
   const envUrl = normalizeBaseUrl(import.meta.env.VITE_API_URL)
   if (envUrl) return envUrl
@@ -65,7 +68,8 @@ export function getAiApiBaseUrl() {
   if (import.meta.env.DEV) return LOCAL_AI_BACKEND_URL
 
   const lsUrl = normalizeBaseUrl(localStorage.getItem('pivot_api_url'))
-  if (lsUrl && !isFrontendHost(lsUrl)) return lsUrl
+  // In production, ignore localhost localStorage overrides
+  if (lsUrl && !isFrontendHost(lsUrl) && !(lsUrl.includes('localhost') || lsUrl.includes('127.0.0.1'))) return lsUrl
 
   const envUrl = normalizeBaseUrl(import.meta.env.VITE_API_URL)
   if (envUrl && !isFrontendHost(envUrl)) return envUrl
@@ -343,4 +347,45 @@ export async function apiGetAlertRules({ sport } = {}) {
 
 export async function apiEvaluateAlerts(userId) {
   return apiFetch(`/api/alerts/evaluate/${userId}`, { method: 'POST' })
+}
+
+/* ─── Interventions API ─── */
+
+export async function apiListInterventions({ athleteId, alertId, status, limit = 100 } = {}) {
+  const params = new URLSearchParams()
+  if (athleteId) params.set('athlete_id', String(athleteId))
+  if (alertId) params.set('alert_id', String(alertId))
+  if (status) params.set('status', status)
+  if (limit) params.set('limit', String(limit))
+  return apiFetch(`/api/interventions?${params.toString()}`, { method: 'GET' })
+}
+
+export async function apiGetIntervention(id) {
+  return apiFetch(`/api/interventions/${id}`, { method: 'GET' })
+}
+
+export async function apiCreateIntervention(payload) {
+  return apiFetch('/api/interventions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function apiUpdateIntervention(id, payload) {
+  return apiFetch(`/api/interventions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function apiDeleteIntervention(id) {
+  return apiFetch(`/api/interventions/${id}`, { method: 'DELETE' })
+}
+
+/* ─── AI training suggestion API ─── */
+
+export async function apiGetTrainingSuggestion(userId, { days = 14 } = {}) {
+  const params = new URLSearchParams()
+  params.set('days', String(days))
+  return apiFetch(`/api/health/training-suggestion/${userId}?${params.toString()}`, { method: 'GET' })
 }

@@ -6,7 +6,7 @@ import HealthTrendChart from '../ui/HealthTrendChart'
 import TrainingImpactChart from '../ui/TrainingImpactChart'
 import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
-import { isMockMode, apiGetHealthMetrics, apiGetTrainingMetrics, apiGetTrainingCorrelation } from '../../config/api'
+import { isMockMode, apiGetHealthMetrics, apiGetTrainingMetrics, apiGetTrainingCorrelation, apiGetTrainingSuggestion } from '../../config/api'
 
 const RANGE_OPTIONS = [
   { value: '7d', label: '7 Days' },
@@ -129,6 +129,8 @@ export default function AthleteTrends() {
   const [healthRows, setHealthRows] = useState([])
   const [trainingRows, setTrainingRows] = useState([])
   const [correlation, setCorrelation] = useState(null)
+  const [suggestion, setSuggestion] = useState(null)
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [loading, setLoading] = useState(!isMockMode())
 
   useEffect(() => {
@@ -147,6 +149,13 @@ export default function AthleteTrends() {
         setHealthRows(h)
         setTrainingRows(t)
         setCorrelation(correlationRes?.correlation || null)
+
+        // Load AI-style training adjustment suggestion in parallel
+        setSuggestionLoading(true)
+        apiGetTrainingSuggestion(user.id, { days: 14 })
+          .then(res => { if (!cancelled) setSuggestion(res?.suggestion || null) })
+          .catch(() => { if (!cancelled) setSuggestion(null) })
+          .finally(() => { if (!cancelled) setSuggestionLoading(false) })
       })
       .catch(() => {
         if (!cancelled) {
@@ -289,24 +298,68 @@ export default function AthleteTrends() {
             </div>
 
             <div className="glass-card p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <TrendingUp size={16} className="text-accent-teal" />
-                <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">Recovery Insights</h3>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp size={16} className="text-accent-teal" />
+                  <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">AI Training Adjustment</h3>
+                </div>
+                {suggestion?.riskLevel && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                    suggestion.riskLevel === 'high' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300' :
+                    suggestion.riskLevel === 'moderate' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' :
+                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                  }`}>
+                    {suggestion.riskLevel} risk
+                  </span>
+                )}
               </div>
-              <div className="space-y-3">
-                <div className="p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
-                  <p className="text-xs font-medium text-pivot-900 dark:text-white mb-1">Recovery State</p>
-                  <p className="text-xs text-pivot-500 dark:text-slate-400">Below baseline — accumulated fatigue detected</p>
+              {suggestionLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-pivot-200 dark:border-slate-600 border-t-accent-teal rounded-full animate-spin" />
                 </div>
+              ) : suggestion?.hasEnoughData === false ? (
                 <div className="p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
-                  <p className="text-xs font-medium text-pivot-900 dark:text-white mb-1">Recommended Action</p>
-                  <p className="text-xs text-pivot-500 dark:text-slate-400">Reduce training intensity by 20-30% for 2-3 days to allow recovery</p>
+                  <p className="text-xs text-pivot-500 dark:text-slate-400">{suggestion.suggestion}</p>
                 </div>
+              ) : suggestion ? (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-xl bg-accent-teal/5 dark:bg-teal-900/10 border border-accent-teal/10 dark:border-teal-800/30">
+                    <p className="text-xs font-medium text-pivot-900 dark:text-white mb-1">Suggestion</p>
+                    <p className="text-xs text-pivot-600 dark:text-slate-300 leading-relaxed">{suggestion.suggestion}</p>
+                  </div>
+                  {suggestion.actions?.length > 0 && (
+                    <div className="p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
+                      <p className="text-xs font-medium text-pivot-900 dark:text-white mb-1.5">Recommended Actions</p>
+                      <ul className="space-y-1.5">
+                        {suggestion.actions.map((action, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5 text-xs text-pivot-600 dark:text-slate-300">
+                            <span className="w-1 h-1 rounded-full bg-accent-teal mt-1.5 shrink-0" />
+                            {action}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {suggestion.metrics && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-2 rounded-xl bg-pivot-50 dark:bg-slate-800/50 text-center">
+                        <p className="text-xs font-semibold text-pivot-900 dark:text-white">{suggestion.metrics.recentLoad}</p>
+                        <p className="text-[10px] text-pivot-400">Recent Load</p>
+                      </div>
+                      <div className="p-2 rounded-xl bg-pivot-50 dark:bg-slate-800/50 text-center">
+                        <p className={`text-xs font-semibold ${suggestion.metrics.hrvDeltaPct < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                          {suggestion.metrics.hrvDeltaPct > 0 ? '+' : ''}{suggestion.metrics.hrvDeltaPct}%
+                        </p>
+                        <p className="text-[10px] text-pivot-400">HRV Δ</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <div className="p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
-                  <p className="text-xs font-medium text-pivot-900 dark:text-white mb-1">Estimated Return to Baseline</p>
-                  <p className="text-xs text-pivot-500 dark:text-slate-400">~5 days with proper rest and nutrition</p>
+                  <p className="text-xs text-pivot-500 dark:text-slate-400">No training suggestion available.</p>
                 </div>
-              </div>
+              )}
             </div>
           </motion.div>
 

@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown, ChevronRight, Users, Send, X, Loader2 } from 'lucide-react'
+import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown, ChevronRight, Users, Send, X, Loader2, Stethoscope } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
 import ConversationModal from '../ui/ConversationModal'
+import InterventionModal from '../ui/InterventionModal'
+import InterventionTimeline from '../ui/InterventionTimeline'
 import { useAlerts } from '../../context/AlertContext'
 import { useUser } from '../../context/UserContext'
 import { isMockMode } from '../../config/api'
-import { apiListAthletes, apiListCoaches, apiListMessages, apiGetUnreadCount, apiSendMessage } from '../../config/api'
+import { apiListAthletes, apiListCoaches, apiListMessages, apiGetUnreadCount, apiSendMessage, apiListInterventions, apiCreateIntervention, apiUpdateIntervention } from '../../config/api'
 
 function Toast({ message, visible, variant }) {
   const bg = variant === 'error' ? 'bg-red-600' : 'bg-emerald-600'
@@ -98,6 +100,13 @@ export default function CoachAlertCenter() {
   const [coachConversations, setCoachConversations] = useState([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+
+  // Intervention modal state
+  const [interventionAlert, setInterventionAlert] = useState(null)
+  const [interventionEditData, setInterventionEditData] = useState(null)
+  const [interventionViewAlert, setInterventionViewAlert] = useState(null)
+  const [interventionsLoading, setInterventionsLoading] = useState(false)
+  const [interventionsList, setInterventionsList] = useState([])
 
   const showToast = (msg, variant = 'success') => {
     setToast({ visible: true, message: msg, variant })
@@ -300,6 +309,77 @@ export default function CoachAlertCenter() {
     }
   }
 
+  // Intervention handlers
+  const openInterventionModal = (alert, editData = null) => {
+    setActionMenu(null)
+    setInterventionAlert(alert)
+    setInterventionEditData(editData)
+  }
+
+  const closeInterventionModal = () => {
+    setInterventionAlert(null)
+    setInterventionEditData(null)
+  }
+
+  const handleSaveIntervention = async (payload, id) => {
+    if (isMockMode()) {
+      showToast('Intervention logged (mock)')
+      if (interventionViewAlert) {
+        setInterventionsList(prev => [
+          {
+            id: Date.now(),
+            alertId: interventionAlert?.id,
+            athleteId: interventionAlert?.athleteId,
+            interventionType: payload.intervention_type,
+            description: payload.description,
+            actionsTaken: payload.actions_taken,
+            status: payload.status,
+            effectivenessScore: payload.effectiveness_score,
+            outcomeNotes: payload.outcome_notes,
+            coachName: me?.name || 'Coach',
+            startedAt: new Date().toISOString(),
+          },
+          ...prev,
+        ])
+      }
+      return
+    }
+    if (id) {
+      await apiUpdateIntervention(id, payload)
+      showToast('Intervention updated')
+    } else {
+      await apiCreateIntervention(payload)
+      showToast('Intervention logged')
+    }
+    if (interventionViewAlert) {
+      await loadInterventions(interventionViewAlert)
+    }
+  }
+
+  const loadInterventions = async (alert) => {
+    if (isMockMode()) return
+    setInterventionsLoading(true)
+    try {
+      const data = await apiListInterventions({ alertId: alert.id, limit: 50 })
+      setInterventionsList(data.interventions || [])
+    } catch (err) {
+      setInterventionsList([])
+    } finally {
+      setInterventionsLoading(false)
+    }
+  }
+
+  const openInterventionView = (alert) => {
+    setActionMenu(null)
+    setInterventionViewAlert(alert)
+    loadInterventions(alert)
+  }
+
+  const closeInterventionView = () => {
+    setInterventionViewAlert(null)
+    setInterventionsList([])
+  }
+
   return (
     <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
       <Sidebar role="coach" />
@@ -465,6 +545,18 @@ export default function CoachAlertCenter() {
                                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors"
                                 >
                                   <MessageCircle size={14} className="text-accent-blue" /> Contact Athlete
+                                </button>
+                                <button
+                                  onClick={() => openInterventionModal(alert)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
+                                >
+                                  <Stethoscope size={14} className="text-accent-teal" /> Log Intervention
+                                </button>
+                                <button
+                                  onClick={() => openInterventionView(alert)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                                >
+                                  <Clock size={14} className="text-indigo-500" /> View Timeline
                                 </button>
                                 <button
                                   onClick={() => openNotifyModal(alert)}
@@ -775,6 +867,81 @@ export default function CoachAlertCenter() {
                 >
                   {notifySending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                   {notifySending ? 'Sending…' : `Send to ${notifySelected.size}`}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Intervention modal */}
+      <AnimatePresence>
+        {interventionAlert && (
+          <InterventionModal
+            alert={interventionAlert}
+            athlete={resolveRecipient(interventionAlert)}
+            initialData={interventionEditData}
+            onClose={closeInterventionModal}
+            onSaved={handleSaveIntervention}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Intervention timeline view modal */}
+      <AnimatePresence>
+        {interventionViewAlert && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeInterventionView}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card rounded-2xl shadow-2xl border border-pivot-200 dark:border-slate-600 w-full max-w-lg flex flex-col max-h-[85vh]"
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-pivot-100 dark:border-slate-700/30">
+                <div className="flex items-center gap-2">
+                  <Clock size={18} className="text-indigo-500" />
+                  <h3 className="text-sm font-semibold text-pivot-900 dark:text-white">Intervention Timeline</h3>
+                </div>
+                <button
+                  onClick={closeInterventionView}
+                  className="p-1.5 rounded-lg text-pivot-400 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto custom-scrollbar flex-1">
+                <div className="mb-4 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30">
+                  <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">
+                    {interventionViewAlert.athleteName}
+                  </p>
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    {interventionViewAlert.type} ({interventionViewAlert.level?.toUpperCase()})
+                  </p>
+                </div>
+                {interventionsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 size={24} className="text-accent-blue animate-spin" />
+                  </div>
+                ) : (
+                  <InterventionTimeline
+                    alertId={interventionViewAlert.id}
+                    onEdit={(item) => openInterventionModal(interventionViewAlert, item)}
+                  />
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-pivot-100 dark:border-slate-700/30">
+                <button
+                  onClick={() => openInterventionModal(interventionViewAlert)}
+                  className="px-4 py-2 rounded-xl bg-accent-teal text-white text-xs font-medium hover:bg-teal-600 transition-colors active:scale-95 flex items-center gap-1.5"
+                >
+                  <Stethoscope size={14} /> Log New Intervention
                 </button>
               </div>
             </motion.div>
