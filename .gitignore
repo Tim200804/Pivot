@@ -8,6 +8,8 @@ dist/
 dist-ssr/
 build/
 .vite/
+/assets/
+/docs/
 
 # macOS
 .DS_Store
