@@ -3,7 +3,7 @@
 // Always calls the real Kimi-backed backend (/api/ai/*), in both mock and real auth modes.
 // Rule-based helpers are used only when the API is unreachable.
 
-import { apiAiFetch, apiAiStream } from '../config/api'
+import { apiAiFetch } from '../config/api'
 
 const STORAGE_KEY = 'pivot_ai_chat_history'
 
@@ -92,83 +92,22 @@ async function generateAILowPeriodSupport(athlete, checkin) {
 }
 
 /**
- * Parse SSE body from /api/ai/chat. Calls onChunk(delta) for each content piece.
- * Completes only after data: [DONE].
+ * Request a chat response from Kimi via local Flask (non-streaming JSON).
+ * Returns the full text once the backend finishes generating.
  */
-async function consumeChatSse(response, onChunk) {
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error('Streaming not supported')
-
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullText = ''
-  let sawDone = false
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n')
-    buffer = parts.pop() ?? ''
-
-    for (const line of parts) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const payload = trimmed.slice(5).trim()
-      if (payload === '[DONE]') {
-        sawDone = true
-        break
-      }
-      try {
-        const parsed = JSON.parse(payload)
-        if (parsed.error) throw new Error(parsed.error)
-        if (parsed.content) {
-          fullText += parsed.content
-          onChunk?.(parsed.content, fullText)
-        }
-      } catch (e) {
-        if (e instanceof SyntaxError) continue
-        throw e
-      }
-    }
-    if (sawDone) break
-  }
-
-  if (!sawDone) {
-    // Drain any trailing buffer
-    const trimmed = buffer.trim()
-    if (trimmed.startsWith('data:')) {
-      const payload = trimmed.slice(5).trim()
-      if (payload === '[DONE]') sawDone = true
-    }
-  }
-
-  if (!sawDone && !fullText) {
-    throw new Error('Stream ended without [DONE]')
-  }
-
-  return fullText
-}
-
-/**
- * Stream a chat response from Kimi via local Flask SSE.
- * @param {function(string, string): void} [onChunk] - (delta, fullText) => void
- */
-async function streamAIChatResponse(athlete, checkin, messages, onChunk) {
+async function fetchAIChatResponse(athlete, checkin, messages) {
   try {
-    const response = await apiAiStream('/api/ai/chat', {
+    const data = await apiAiFetch('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({ athlete, checkin, messages }),
     })
-    const text = await consumeChatSse(response, onChunk)
-    return text || null
+    return data?.text || null
   } catch (error) {
     // Surface rate-limit so UI can ask the user to retry (don't silently fall back)
     if (error?.status === 429 || /rate limit|busy|concurrency/i.test(error?.message || '')) {
       throw error
     }
-    console.warn('AI chat stream failed, using fallback:', error.message)
+    console.warn('AI chat request failed, using fallback:', error.message)
     return null
   }
 }
@@ -481,11 +420,11 @@ export async function getAICoachInsight(athlete, checkin) {
 }
 
 /**
- * Main export: Stream AI response in a conversation.
- * @param {function(string, string): void} [onChunk] - called with (delta, fullText) as tokens arrive
+ * Main export: Get an AI response in a conversation (non-streaming).
+ * Returns the full text once the backend finishes generating.
  */
-export async function getAIChatResponse(athlete, checkin, messages, onChunk) {
-  const aiText = await streamAIChatResponse(athlete, checkin, messages, onChunk)
+export async function getAIChatResponse(athlete, checkin, messages) {
+  const aiText = await fetchAIChatResponse(athlete, checkin, messages)
 
   if (aiText) {
     return { text: aiText, isDemo: false }

@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { TrendingUp, Activity, Heart, Moon, BarChart3 } from 'lucide-react'
+import { TrendingUp, Activity, Heart, Moon, BarChart3, Dumbbell } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import HealthTrendChart from '../ui/HealthTrendChart'
+import TrainingImpactChart from '../ui/TrainingImpactChart'
 import { useTheme } from '../../context/ThemeContext'
-import { ATHLETES } from '../../data/mockData'
-
-const DEMO_ATHLETE = ATHLETES[2] // Morgan
+import { useUser } from '../../context/UserContext'
+import { isMockMode, apiGetHealthMetrics, apiGetTrainingMetrics, apiGetTrainingCorrelation } from '../../config/api'
 
 const RANGE_OPTIONS = [
   { value: '7d', label: '7 Days' },
@@ -17,10 +17,11 @@ const RANGE_OPTIONS = [
 function lerp(a, b, t) { return a + (b - a) * t }
 
 function generateRangeData(athlete, range) {
-  const h7 = athlete.health
-  const t7 = athlete.training
+  const h7 = athlete.health || []
+  const t7 = athlete.training || []
 
-  if (range === '7d') {
+  // If we don't have enough real data, fall back to 7-day view
+  if (range === '7d' || h7.length < 7) {
     return {
       health: h7,
       training: t7,
@@ -122,10 +123,59 @@ function generateRangeData(athlete, range) {
 
 export default function AthleteTrends() {
   const { theme } = useTheme()
+  const { user } = useUser()
   const isDark = theme === 'dark'
   const [timeRange, setTimeRange] = useState('7d')
+  const [healthRows, setHealthRows] = useState([])
+  const [trainingRows, setTrainingRows] = useState([])
+  const [correlation, setCorrelation] = useState(null)
+  const [loading, setLoading] = useState(!isMockMode())
 
-  const data = useMemo(() => generateRangeData(DEMO_ATHLETE, timeRange), [timeRange])
+  useEffect(() => {
+    if (isMockMode() || !user?.id) return
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      apiGetHealthMetrics(user.id, { limit: 180 }),
+      apiGetTrainingMetrics(user.id, { limit: 180 }),
+      apiGetTrainingCorrelation(user.id, { days: 28 }).catch(() => null),
+    ])
+      .then(([healthRes, trainingRes, correlationRes]) => {
+        if (cancelled) return
+        const h = (healthRes?.metrics || []).map(r => ({ ...r, day: r.day || r.date })).reverse()
+        const t = (trainingRes?.metrics || []).map(r => ({ ...r, day: r.day || r.date })).reverse()
+        setHealthRows(h)
+        setTrainingRows(t)
+        setCorrelation(correlationRes?.correlation || null)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHealthRows([])
+          setTrainingRows([])
+          setCorrelation(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [user?.id])
+
+  const data = useMemo(() => generateRangeData({ health: healthRows, training: trainingRows }, timeRange), [healthRows, trainingRows, timeRange])
+
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
+        <Sidebar role="athlete" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-pivot-500 dark:text-slate-400">
+            <div className="w-8 h-8 border-2 border-pivot-200 dark:border-slate-600 border-t-accent-blue rounded-full animate-spin" />
+            <p className="text-sm">Loading trends...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
@@ -170,12 +220,27 @@ export default function AthleteTrends() {
             />
           </motion.div>
 
+          {/* Training Load Overlay */}
+          <motion.div
+            key={`impact-${timeRange}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+          >
+            <TrainingImpactChart
+              healthData={data.health}
+              trainingData={data.training}
+              title={`${data.labelPrefix} Training Load vs Recovery`}
+              darkMode={isDark}
+            />
+          </motion.div>
+
           {/* Training Trends */}
           <motion.div
             key={`training-${timeRange}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
+            transition={{ delay: 0.18 }}
           >
             <HealthTrendChart
               data={data.training}
@@ -189,30 +254,36 @@ export default function AthleteTrends() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="glass-card p-5">
               <div className="flex items-center gap-2 mb-3">
-                <BarChart3 size={16} className="text-accent-blue" />
-                <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">Trend Analysis</h3>
+                <Dumbbell size={16} className="text-accent-blue" />
+                <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">Training-Recovery Correlation</h3>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-2">
                     <Heart size={14} className="text-rose-500" />
-                    <span className="text-xs text-pivot-600 dark:text-slate-300">HRV {data.trendLabel} Trend</span>
+                    <span className="text-xs text-pivot-600 dark:text-slate-300">Load vs HRV</span>
                   </div>
-                  <span className="text-xs font-semibold text-rose-500">↓ Declining</span>
+                  <span className={`text-xs font-semibold ${correlation?.correlations?.loadVsHrv != null ? (correlation.correlations.loadVsHrv < -0.3 ? 'text-rose-500' : 'text-emerald-500') : 'text-slate-400'}`}>
+                    {correlation?.correlations?.loadVsHrv != null ? correlation.correlations.loadVsHrv.toFixed(2) : '—'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-2">
                     <Activity size={14} className="text-amber-500" />
-                    <span className="text-xs text-pivot-600 dark:text-slate-300">RHR {data.trendLabel} Trend</span>
+                    <span className="text-xs text-pivot-600 dark:text-slate-300">Load vs RHR</span>
                   </div>
-                  <span className="text-xs font-semibold text-amber-500">↑ Rising</span>
+                  <span className={`text-xs font-semibold ${correlation?.correlations?.loadVsRhr != null ? (correlation.correlations.loadVsRhr > 0.3 ? 'text-rose-500' : 'text-emerald-500') : 'text-slate-400'}`}>
+                    {correlation?.correlations?.loadVsRhr != null ? correlation.correlations.loadVsRhr.toFixed(2) : '—'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between p-3 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                   <div className="flex items-center gap-2">
-                    <Moon size={14} className="text-rose-500" />
-                    <span className="text-xs text-pivot-600 dark:text-slate-300">Sleep {data.trendLabel} Trend</span>
+                    <Moon size={14} className="text-indigo-500" />
+                    <span className="text-xs text-pivot-600 dark:text-slate-300">Load vs Sleep</span>
                   </div>
-                  <span className="text-xs font-semibold text-rose-500">↓ Declining</span>
+                  <span className={`text-xs font-semibold ${correlation?.correlations?.loadVsSleep != null ? (correlation.correlations.loadVsSleep < -0.3 ? 'text-rose-500' : 'text-emerald-500') : 'text-slate-400'}`}>
+                    {correlation?.correlations?.loadVsSleep != null ? correlation.correlations.loadVsSleep.toFixed(2) : '—'}
+                  </span>
                 </div>
               </div>
             </div>

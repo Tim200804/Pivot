@@ -80,40 +80,25 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
     const assistantId = `ai-${Date.now()}`
 
     const updatedMessages = [...messages, userMessage]
-    setMessages([
-      ...updatedMessages,
-      {
-        id: assistantId,
-        role: 'assistant',
-        text: '',
-        isDemo: false,
-        streaming: true,
-        timestamp: Date.now(),
-      },
-    ])
+    setMessages(updatedMessages)
     setInputValue('')
     setLoading(true)
     setError(false)
     setErrorMessage('')
 
     try {
-      const result = await getAIChatResponse(
-        athlete,
-        checkin,
-        updatedMessages,
-        (_delta, fullText) => {
-          setMessages(prev => prev.map(m =>
-            m.id === assistantId ? { ...m, text: fullText, streaming: true } : m
-          ))
+      const result = await getAIChatResponse(athlete, checkin, updatedMessages)
+      setMessages(prev => [
+        ...prev,
+        {
+          id: assistantId,
+          role: 'assistant',
+          text: result.text,
+          isDemo: result.isDemo,
+          timestamp: Date.now(),
         },
-      )
-      setMessages(prev => prev.map(m =>
-        m.id === assistantId
-          ? { ...m, text: result.text, isDemo: result.isDemo, streaming: false }
-          : m
-      ))
+      ])
     } catch (err) {
-      setMessages(prev => prev.filter(m => !(m.id === assistantId && !m.text)))
       setError(true)
       setErrorMessage(
         err?.status === 429 || /rate limit|busy|concurrency/i.test(err?.message || '')

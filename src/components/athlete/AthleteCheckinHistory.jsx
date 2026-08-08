@@ -1,10 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { ClipboardCheck, Calendar, TrendingUp, TrendingDown, Minus, Smile, Frown, Meh, Zap, BatteryLow } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
-import { ATHLETES } from '../../data/mockData'
-
-const DEMO_ATHLETE = ATHLETES[2] // Morgan Smith
+import { isMockMode, apiListCheckins } from '../../config/api'
 
 const moodIcons = {
   high: Smile,
@@ -26,7 +24,44 @@ function getMoodColor(mood) {
 
 export default function AthleteCheckinHistory() {
   const [expanded, setExpanded] = useState(null)
-  const checkins = [...DEMO_ATHLETE.checkins].reverse()
+  const [checkins, setCheckins] = useState([])
+  const [loading, setLoading] = useState(!isMockMode())
+
+  useEffect(() => {
+    if (isMockMode()) return
+    let cancelled = false
+    setLoading(true)
+    apiListCheckins({ limit: 90 })
+      .then(data => {
+        if (cancelled) return
+        const rows = (data?.checkins || []).map(c => ({
+          ...c,
+          day: c.date || c.day,
+        }))
+        setCheckins(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setCheckins([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
+        <Sidebar role="athlete" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-pivot-500 dark:text-slate-400">
+            <div className="w-8 h-8 border-2 border-pivot-200 dark:border-slate-600 border-t-accent-blue rounded-full animate-spin" />
+            <p className="text-sm">Loading check-in history...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
@@ -47,7 +82,7 @@ export default function AthleteCheckinHistory() {
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center">
                 <p className="text-2xl font-bold text-pivot-900 dark:text-white">
-                  {Math.round(checkins.slice(0, 7).reduce((s, c) => s + c.mood, 0) / Math.min(7, checkins.length) * 10) / 10}
+                  {checkins.length > 0 ? Math.round(checkins.slice(0, 7).reduce((s, c) => s + c.mood, 0) / Math.min(7, checkins.length) * 10) / 10 : '-'}
                 </p>
                 <p className="text-xs text-pivot-400 mt-1">Avg Mood /5</p>
                 <div className="flex justify-center gap-0.5 mt-1.5">
@@ -58,13 +93,13 @@ export default function AthleteCheckinHistory() {
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-pivot-900 dark:text-white">
-                  {Math.round(checkins.slice(0, 7).reduce((s, c) => s + c.motivation, 0) / Math.min(7, checkins.length) * 10) / 10}
+                  {checkins.length > 0 ? Math.round(checkins.slice(0, 7).reduce((s, c) => s + c.motivation, 0) / Math.min(7, checkins.length) * 10) / 10 : '-'}
                 </p>
                 <p className="text-xs text-pivot-400 mt-1">Avg Motivation /10</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-pivot-900 dark:text-white">
-                  {Math.round(checkins.slice(0, 7).reduce((s, c) => s + c.fatigue, 0) / Math.min(7, checkins.length) * 10) / 10}
+                  {checkins.length > 0 ? Math.round(checkins.slice(0, 7).reduce((s, c) => s + c.fatigue, 0) / Math.min(7, checkins.length) * 10) / 10 : '-'}
                 </p>
                 <p className="text-xs text-pivot-400 mt-1">Avg Fatigue /10</p>
               </div>
@@ -84,7 +119,7 @@ export default function AthleteCheckinHistory() {
 
                 return (
                   <motion.div
-                    key={checkin.day}
+                    key={checkin.id || checkin.day || i}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.02 * i }}
@@ -98,7 +133,7 @@ export default function AthleteCheckinHistory() {
                         <Calendar size={18} className="text-pivot-400" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-pivot-700 dark:text-slate-200">{checkin.day}</p>
+                        <p className="text-sm font-semibold text-pivot-700 dark:text-slate-200">{checkin.day || checkin.date}</p>
                         <div className="flex items-center gap-2 mt-0.5">
                           <MoodIcon size={14} className={moodColor} />
                           <span className="text-xs text-pivot-400">Mood {checkin.mood}/5</span>

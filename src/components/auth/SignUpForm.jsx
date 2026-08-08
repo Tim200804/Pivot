@@ -12,7 +12,11 @@ const fadeUp = {
   exit: { opacity: 0, y: -8, transition: { duration: 0.2 } },
 }
 
-const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
+// Permissive email regex: any non-whitespace local part, an @, and a domain with a TLD >= 2 chars.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+// Password: at least 8 chars, alphanumeric only, and must contain at least one letter and one digit.
+const PASSWORD_RE = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/
 
 const glassInput = "w-full px-4 py-3 rounded-2xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-pivot-900 dark:text-white placeholder-pivot-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-accent-blue/40 focus:border-accent-blue transition-all text-sm"
 
@@ -150,11 +154,26 @@ export default function SignUpForm({ role, sport, setSport }) {
   const isFormValid = useMemo(() => {
     const base = school && teamName && name && email && emailValid
     const emailOk = !isMockMode() ? emailValid && emailAvailable && !emailChecking : true
-    const hasPassword = !isMockMode() ? password.length >= 6 && password === confirmPassword : true
+    const hasPassword = !isMockMode() ? password.trim().length > 0 && confirmPassword.trim().length > 0 : true
     return role === 'athlete'
       ? base && position && height && weight && hasPassword && emailOk
       : base && coachRole && hasPassword && emailOk
   }, [role, school, teamName, name, email, emailValid, emailAvailable, emailChecking, position, height, weight, coachRole, password, confirmPassword])
+
+  const passwordError = useMemo(() => {
+    if (!password) return ''
+    if (password.length < 8) return 'Password must be at least 8 characters'
+    if (!/[A-Za-z]/.test(password)) return 'Password must contain at least one letter'
+    if (!/\d/.test(password)) return 'Password must contain at least one digit'
+    if (!/^[A-Za-z\d]+$/.test(password)) return 'Password can only contain letters and digits'
+    return ''
+  }, [password])
+
+  const confirmPasswordError = useMemo(() => {
+    if (!confirmPassword || !password) return ''
+    if (confirmPassword !== password) return 'Passwords do not match'
+    return ''
+  }, [password, confirmPassword])
 
   const handleSportChange = (newSport) => {
     setSport(newSport)
@@ -176,8 +195,8 @@ export default function SignUpForm({ role, sport, setSport }) {
         setError('This email is already registered')
         return
       }
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters')
+      if (!PASSWORD_RE.test(password)) {
+        setError('Password must be at least 8 characters and contain both letters and digits')
         return
       }
       if (password !== confirmPassword) {
@@ -294,11 +313,14 @@ export default function SignUpForm({ role, sport, setSport }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Password <span className="text-red-400">*</span></label>
-              <input type="password" name={`${inputPrefix}-password`} autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} placeholder="Min 6 characters" minLength={6} className={glassInput} required={!isMockMode()} />
+              <input type="password" name={`${inputPrefix}-password`} autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); setError('') }} placeholder="Min 8 chars, letters + digits" minLength={8} className={`${glassInput} ${passwordError ? 'border-red-400 focus:border-red-400 focus:ring-red-400/40' : password && !passwordError ? 'border-green-400 focus:border-green-400 focus:ring-green-400/40' : ''}`} required={!isMockMode()} />
+              {passwordError && <p className="mt-1.5 text-xs text-red-500 font-medium">{passwordError}</p>}
+              {password && !passwordError && <p className="mt-1.5 text-xs text-green-600 dark:text-green-400 font-medium">Password looks good</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Confirm Password <span className="text-red-400">*</span></label>
-              <input type="password" name={`${inputPrefix}-confirm-password`} autoComplete="new-password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError('') }} placeholder="Repeat password" className={glassInput} required={!isMockMode()} />
+              <input type="password" name={`${inputPrefix}-confirm-password`} autoComplete="new-password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError('') }} placeholder="Repeat password" className={`${glassInput} ${confirmPasswordError ? 'border-red-400 focus:border-red-400 focus:ring-red-400/40' : confirmPassword && !confirmPasswordError ? 'border-green-400 focus:border-green-400 focus:ring-green-400/40' : ''}`} required={!isMockMode()} />
+              {confirmPasswordError && <p className="mt-1.5 text-xs text-red-500 font-medium">{confirmPasswordError}</p>}
             </div>
           </div>
         </div>

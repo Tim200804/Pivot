@@ -1,11 +1,83 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import { ATHLETES, ALERTS } from '../data/mockData'
+import {
+  isMockMode,
+  apiListAthletes,
+  apiGetCoachAlerts,
+  apiGetAthleteAlerts,
+  apiUpdateAlertStatus,
+} from '../config/api'
+import { useUser } from './UserContext'
 
 const AlertContext = createContext()
 
+function formatRelativeTime(isoString) {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return isoString
+  const now = new Date()
+  const diffMs = now - date
+  const diffSec = Math.floor(diffMs / 1000)
+  if (diffSec < 60) return 'just now'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 export function AlertProvider({ children }) {
+  const { user } = useUser()
   const [alerts, setAlerts] = useState(ALERTS)
+  const [realAthletes, setRealAthletes] = useState([])
   const [nudges, setNudges] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const refreshAlerts = useCallback(async () => {
+    if (isMockMode()) return
+    if (!user?.id) {
+      setAlerts([])
+      return
+    }
+    setLoading(true)
+    try {
+      const isCoach = user.role === 'coach'
+      const data = isCoach ? await apiGetCoachAlerts() : await apiGetAthleteAlerts()
+      const rows = data?.alerts || []
+      setAlerts(rows.map(a => ({
+        ...a,
+        athleteId: a.athleteId ?? a.userId ?? a.user_id,
+        athleteName: a.athleteName ?? a.userName ?? a.user_name,
+        severity: a.severity ?? a.level,
+        status: a.status ?? 'active',
+        time: a.time ?? formatRelativeTime(a.createdAt ?? a.triggeredAt),
+      })))
+    } catch (err) {
+      console.warn('Failed to load alerts:', err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [user?.id, user?.role])
+
+  // In real mode, load the actual athlete roster and real alerts from the backend.
+  useEffect(() => {
+    if (isMockMode()) return
+    let cancelled = false
+    async function load() {
+      if (!user?.id) return
+      try {
+        const athletesData = await apiListAthletes()
+        if (!cancelled) setRealAthletes(athletesData?.athletes || [])
+      } catch {
+        if (!cancelled) setRealAthletes([])
+      }
+      if (!cancelled) await refreshAlerts()
+    }
+    load()
+    return () => { cancelled = true }
+  }, [user?.id, refreshAlerts])
 
   const totalAlerts = alerts.length
   const alertCount = useMemo(() => ({
@@ -14,17 +86,23 @@ export function AlertProvider({ children }) {
     black: alerts.filter(a => a.level === 'black' && a.status !== 'actioned').length,
   }), [alerts])
 
-  const dismissAlert = useCallback((alertId) => {
+  const dismissAlert = useCallback(async (alertId) => {
     setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'dismissed', dismissedAt: new Date().toISOString() } : a))
+    if (!isMockMode()) {
+      try { await apiUpdateAlertStatus(alertId, 'dismissed') } catch { /* keep local state */ }
+    }
   }, [])
 
-  const actionAlert = useCallback((alertId, interventionType) => {
+  const actionAlert = useCallback(async (alertId, interventionType) => {
     setAlerts(prev => prev.map(a => a.id === alertId ? {
       ...a,
       status: 'actioned',
       actionedAt: new Date().toISOString(),
       interventionType,
     } : a))
+    if (!isMockMode()) {
+      try { await apiUpdateAlertStatus(alertId, 'resolved') } catch { /* keep local state */ }
+    }
   }, [])
 
   const sendNudge = useCallback((alertId, athleteId, message, checkInPrompt) => {
@@ -63,13 +141,17 @@ export function AlertProvider({ children }) {
 
   const clearAllNudges = useCallback(() => setNudges([]), [])
 
+  const athletes = isMockMode() ? ATHLETES : realAthletes
+
   const value = {
     alerts,
     setAlerts,
     nudges,
     totalAlerts,
     alertCount,
-    athletes: ATHLETES,
+    athletes,
+    loading,
+    refreshAlerts,
     dismissAlert,
     actionAlert,
     sendNudge,

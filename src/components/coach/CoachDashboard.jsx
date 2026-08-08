@@ -5,7 +5,7 @@ import {
   Users, Activity, Bell, TrendingUp, Heart, Moon, AlertTriangle,
   Menu, X, Search, ChevronRight, XCircle, BarChart3, CheckCircle,
   GraduationCap, Ruler, Weight, ClipboardCheck, MoreVertical, MessageCircle, CheckCheck,
-  History, ArrowRight
+  History, ArrowRight, Dumbbell
 } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
@@ -15,7 +15,7 @@ import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
 import { useMoodColors } from '../../context/MoodColorContext'
-import { ATHLETES, generateTeamAggregate } from '../../data/mockData'
+import { isMockMode, apiGetTeamSummary } from '../../config/api'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -38,8 +38,14 @@ const Toast = memo(function Toast({ message, visible, variant }) {
   )
 })
 
-// Compute team 7-day aggregate from actual ATHLETES data
+// Compute team 7-day aggregate from actual athlete data.
+// Real backend athletes currently carry a `latest` summary; full 7-day series
+// would require per-athlete metric fetches. Here we safely fall back to empty
+// trend points when embedded health arrays are unavailable.
 function computeTeamTrendData(athletes) {
+  if (!athletes?.length || !athletes[0]?.health) {
+    return DAYS.map(day => ({ day, hrv: 0, rhr: 0, sleepHours: 0 }))
+  }
   return DAYS.map((day, i) => {
     const hrvSum = athletes.reduce((s, a) => s + (a.health[i]?.hrv || 0), 0)
     const rhrSum = athletes.reduce((s, a) => s + (a.health[i]?.rhr || 0), 0)
@@ -57,7 +63,7 @@ function computeTeamTrendData(athletes) {
 export default function CoachDashboard() {
   const { theme } = useTheme()
   const { user } = useUser()
-  const { alerts, totalAlerts, alertCount, dismissAlert, sendNudge } = useAlerts()
+  const { alerts, totalAlerts, alertCount, dismissAlert, sendNudge, athletes: realAthletes } = useAlerts()
   const { palette } = useMoodColors()
   const navigate = useNavigate()
   const isDark = theme === 'dark'
@@ -67,6 +73,12 @@ export default function CoachDashboard() {
   const [toast, setToast] = useState({ visible: false, message: '', variant: 'success' })
   const [actionMenu, setActionMenu] = useState(null)
   const [interventionAlert, setInterventionAlert] = useState(null)
+  const [teamSummary, setTeamSummary] = useState(null)
+
+  const athletes = useMemo(() => {
+    if (isMockMode()) return []
+    return teamSummary?.athletes?.length ? teamSummary.athletes : realAthletes
+  }, [teamSummary, realAthletes])
 
   // Lock body scroll when mobile menu or athlete modal is open
   useEffect(() => {
@@ -78,14 +90,41 @@ export default function CoachDashboard() {
     return () => { document.body.style.overflow = '' }
   }, [mobileMenuOpen, selectedAthlete])
 
-  const teamAgg = useMemo(() => generateTeamAggregate(ATHLETES), [])
-  const teamTrendData = useMemo(() => computeTeamTrendData(ATHLETES), [])
+  // Fetch real team summary from backend
+  useEffect(() => {
+    if (isMockMode() || !user?.id) return
+    let cancelled = false
+    apiGetTeamSummary()
+      .then(data => {
+        if (!cancelled) setTeamSummary(data?.summary || null)
+      })
+      .catch(() => {
+        if (!cancelled) setTeamSummary(null)
+      })
+    return () => { cancelled = true }
+  }, [user?.id])
+
+  const teamAgg = useMemo(() => {
+    if (isMockMode()) {
+      return { teamName: 'Varsity Heavyweight 8+', totalAthletes: 6, healthScore: 72, avgHRV: 54, avgRHR: 56, avgSleep: 6.8 }
+    }
+    return {
+      teamName: user?.teamName || 'Your Team',
+      totalAthletes: teamSummary?.totalAthletes ?? athletes.length,
+      healthScore: teamSummary?.healthScore ?? 100,
+      avgHRV: teamSummary?.avgHRV ?? 0,
+      avgRHR: teamSummary?.avgRHR ?? 0,
+      avgSleep: teamSummary?.avgSleep ?? 0,
+    }
+  }, [teamSummary, athletes, user?.teamName])
+
+  const teamTrendData = useMemo(() => computeTeamTrendData(athletes), [athletes])
 
   const filteredAthletes = useMemo(() =>
     searchQuery
-      ? ATHLETES.filter(a => a.name.toLowerCase().includes(searchQuery.toLowerCase()))
-      : ATHLETES,
-    [searchQuery]
+      ? athletes.filter(a => a.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      : athletes,
+    [searchQuery, athletes]
   )
 
   const activeAlerts = useMemo(() => alerts.filter(a => a.status === 'active'), [alerts])
@@ -113,7 +152,9 @@ export default function CoachDashboard() {
 
   // Handle intervention action completed
   const handleInterventionAction = (action, message) => {
-    setDismissedAlerts(prev => new Set([...prev, interventionAlert.index]))
+    if (interventionAlert) {
+      dismissAlert(interventionAlert.id)
+    }
     setInterventionAlert(null)
     showToast(message, action === 'dismiss' ? 'error' : 'success')
   }
@@ -319,7 +360,7 @@ export default function CoachDashboard() {
                       >
                         <div className="flex items-start justify-between mb-1">
                           <button
-                            onClick={(e) => { e.stopPropagation(); const ath = ATHLETES.find(a => a.id === alert.athleteId); if (ath) setSelectedAthlete(ath) }}
+                            onClick={(e) => { e.stopPropagation(); const ath = athletes.find(a => a.id === alert.athleteId); if (ath) setSelectedAthlete(ath) }}
                             className="text-xs font-semibold text-pivot-700 dark:text-slate-200 hover:text-accent-teal transition-colors text-left"
                           >
                             {alert.athleteName}
@@ -354,7 +395,7 @@ export default function CoachDashboard() {
                                 <CheckCheck size={14} className="text-emerald-500" /> Mark Addressed
                               </button>
                               <button
-                                onClick={(e) => { e.stopPropagation(); setActionMenu(null); setSelectedAthlete(ATHLETES.find(a => a.id === alert.athleteId)) }}
+                                onClick={(e) => { e.stopPropagation(); setActionMenu(null); setSelectedAthlete(athletes.find(a => a.id === alert.athleteId)) }}
                                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors"
                               >
                                 <MessageCircle size={14} className="text-accent-blue" /> View Athlete
@@ -418,6 +459,9 @@ export default function CoachDashboard() {
                         {athlete.recovering && (
                           <span className="status-pill status-pill-warning text-[10px]">Recovering</span>
                         )}
+                        {athlete.rhr && (
+                          <span className="text-[10px] text-pivot-400 dark:text-slate-500">RHR {athlete.rhr}</span>
+                        )}
                       </div>
                       <p className="text-xs text-pivot-400 dark:text-slate-500">
                         {athlete.school} · {athlete.position} · {athlete.height}cm / {athlete.weight}kg
@@ -426,7 +470,7 @@ export default function CoachDashboard() {
 
                     <div className="hidden sm:flex items-center gap-4 text-xs">
                       <div className="text-center">
-                        <p className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentHRV}</p>
+                        <p className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentHRV ?? athlete.hrv ?? '—'}</p>
                         <p className="text-pivot-400 dark:text-slate-500">HRV</p>
                       </div>
                       <div className="text-center">
@@ -436,6 +480,12 @@ export default function CoachDashboard() {
                       <div className="text-center">
                         <p className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentSleep}h</p>
                         <p className="text-pivot-400 dark:text-slate-500">Sleep</p>
+                      </div>
+                      <div className="text-center">
+                        <p className={`font-semibold ${(athlete.recentTrainingLoad || 0) >= 40 ? 'text-rose-500' : 'text-pivot-700 dark:text-slate-300'}`}>
+                          {athlete.recentTrainingLoad ?? '—'}
+                        </p>
+                        <p className="text-pivot-400 dark:text-slate-500">Load</p>
                       </div>
                     </div>
 
@@ -526,7 +576,7 @@ export default function CoachDashboard() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="grid grid-cols-4 gap-3 mb-6">
                 <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-900/10 text-center">
                   <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentHRV}</p>
                   <p className="text-[10px] text-pivot-400">HRV (ms)</p>
@@ -539,7 +589,25 @@ export default function CoachDashboard() {
                   <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentSleep}h</p>
                   <p className="text-[10px] text-pivot-400">Sleep</p>
                 </div>
+                <div className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/10 text-center">
+                  <p className={`text-xl font-bold ${(selectedAthlete.recentTrainingLoad || 0) >= 40 ? 'text-rose-500' : 'text-pivot-900 dark:text-white'}`}>
+                    {selectedAthlete.recentTrainingLoad ?? '—'}
+                  </p>
+                  <p className="text-[10px] text-pivot-400">7-Day Load</p>
+                </div>
               </div>
+
+              {selectedAthlete.latestTrainingType && (
+                <div className="mb-4 flex items-center gap-2 text-xs text-pivot-500 dark:text-slate-400">
+                  <Dumbbell size={14} className="text-indigo-500" />
+                  <span>Latest: <span className="font-medium text-pivot-700 dark:text-slate-300">{selectedAthlete.latestTrainingType}</span></span>
+                  {selectedAthlete.highLoadDays > 0 && (
+                    <span className={`ml-2 ${selectedAthlete.highLoadDays >= 3 ? 'text-rose-500' : 'text-amber-500'}`}>
+                      ({selectedAthlete.highLoadDays} high-load days this week)
+                    </span>
+                  )}
+                </div>
+              )}
 
               <HealthTrendChart data={selectedAthlete.health} title="Health Trends" metrics={['hrv', 'rhr', 'sleepHours']} darkMode={isDark} />
 
@@ -579,7 +647,7 @@ export default function CoachDashboard() {
       {interventionAlert && (
         <InterventionModal
           alert={interventionAlert}
-          athlete={ATHLETES.find(a => a.id === interventionAlert.athleteId)}
+          athlete={athletes.find(a => a.id === interventionAlert.athleteId)}
           isOpen={!!interventionAlert}
           onClose={() => setInterventionAlert(null)}
           onDismiss={() => handleDismissAlert(interventionAlert)}

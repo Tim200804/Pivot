@@ -151,37 +151,6 @@ export async function apiAiFetch(path, options = {}) {
 }
 
 /**
- * Open a streaming AI request (SSE). Returns the raw Response — caller reads the body.
- * No Authorization header (same as apiAiFetch).
- */
-export async function apiAiStream(path, options = {}) {
-  const { headers: optionHeaders, ...fetchOptions } = options
-  const headers = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-    ...optionHeaders,
-  }
-  delete headers.Authorization
-  delete headers.authorization
-
-  const response = await fetch(`${getAiApiBaseUrl()}${path}`, {
-    ...fetchOptions,
-    headers,
-  })
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null)
-    const message = data?.message || `HTTP ${response.status}`
-    const err = new Error(message)
-    err.status = response.status
-    err.data = data
-    throw err
-  }
-
-  return response
-}
-
-/**
  * Test if backend is reachable
  */
 export async function testBackendConnection(baseUrl) {
@@ -269,6 +238,109 @@ export async function apiGetUnreadCount() {
   return apiFetch('/api/messages/unread-count', { method: 'GET' })
 }
 
+export async function apiGetConversation(otherUserId, { limit = 200 } = {}) {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', String(limit))
+  const qs = params.toString()
+  return apiFetch(`/api/messages/conversation/${otherUserId}${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
 export async function apiListAthletes() {
   return apiFetch('/api/auth/athletes', { method: 'GET' })
+}
+
+export async function apiListCoaches() {
+  return apiFetch('/api/auth/coaches', { method: 'GET' })
+}
+
+/* ─── Check-ins API ─── */
+
+export async function apiListCheckins({ limit = 90 } = {}) {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', String(limit))
+  const qs = params.toString()
+  return apiFetch(`/api/checkins${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
+export async function apiGetTodayCheckin() {
+  return apiFetch('/api/checkins/today', { method: 'GET' })
+}
+
+export async function apiSubmitCheckin(checkin) {
+  return apiFetch('/api/checkins', {
+    method: 'POST',
+    body: JSON.stringify(checkin),
+  })
+}
+
+/* ─── Health / Training metrics API ─── */
+
+export async function apiGetHealthMetrics(userId, { limit = 180 } = {}) {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', String(limit))
+  return apiFetch(`/api/health/metrics/${userId}${params.toString() ? `?${params.toString()}` : ''}`, { method: 'GET' })
+}
+
+export async function apiGetTrainingMetrics(userId, { limit = 180 } = {}) {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', String(limit))
+  return apiFetch(`/api/health/training/${userId}${params.toString() ? `?${params.toString()}` : ''}`, { method: 'GET' })
+}
+
+export async function apiGetHealthSummary(userId) {
+  return apiFetch(`/api/health/summary/${userId}`, { method: 'GET' })
+}
+
+export async function apiGetTeamSummary() {
+  return apiFetch('/api/health/team-summary', { method: 'GET' })
+}
+
+export async function apiGetAthleteDashboard() {
+  return apiFetch('/api/health/dashboard', { method: 'GET' })
+}
+
+export async function apiGetTrainingImpact(userId, date) {
+  const params = new URLSearchParams()
+  params.set('date', date)
+  return apiFetch(`/api/health/training-impact/${userId}?${params.toString()}`, { method: 'GET' })
+}
+
+export async function apiGetTrainingCorrelation(userId, { days = 28 } = {}) {
+  const params = new URLSearchParams()
+  params.set('days', String(days))
+  return apiFetch(`/api/health/correlation/${userId}?${params.toString()}`, { method: 'GET' })
+}
+
+/* ─── Alerts API ─── */
+
+export async function apiGetAthleteAlerts({ status } = {}) {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  const qs = params.toString()
+  return apiFetch(`/api/alerts/athlete${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
+export async function apiGetCoachAlerts({ status } = {}) {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  const qs = params.toString()
+  return apiFetch(`/api/alerts/coach${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
+export async function apiUpdateAlertStatus(alertId, status) {
+  return apiFetch(`/api/alerts/${alertId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export async function apiGetAlertRules({ sport } = {}) {
+  const params = new URLSearchParams()
+  if (sport) params.set('sport', sport)
+  const qs = params.toString()
+  return apiFetch(`/api/alerts/rules${qs ? `?${qs}` : ''}`, { method: 'GET' })
+}
+
+export async function apiEvaluateAlerts(userId) {
+  return apiFetch(`/api/alerts/evaluate/${userId}`, { method: 'POST' })
 }

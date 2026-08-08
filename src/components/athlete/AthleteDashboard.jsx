@@ -16,10 +16,19 @@ import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
 import { useMoodColors } from '../../context/MoodColorContext'
-import { ATHLETES } from '../../data/mockData'
+import { isMockMode, apiGetAthleteDashboard, apiSubmitCheckin } from '../../config/api'
 import { getLowPeriodSupport } from '../../utils/aiCoach'
 
-const DEMO_ATHLETE = ATHLETES[2]
+function computeHrvTrend(health) {
+  if (!health || health.length < 2) return 'stable'
+  const first = health[0].hrv
+  const last = health[health.length - 1].hrv
+  const changePct = first !== 0 ? ((last - first) / first) * 100 : 0
+  if (changePct < -10) return 'severe_decline'
+  if (changePct < -5) return 'declining'
+  if (changePct > 5) return 'improving'
+  return 'stable'
+}
 
 const Toast = memo(function Toast({ message, visible }) {
   return (
@@ -48,6 +57,9 @@ export default function AthleteDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showCheckin, setShowCheckin] = useState(false)
   const [toast, setToast] = useState({ visible: false, message: '' })
+  const [loading, setLoading] = useState(!isMockMode())
+  const [error, setError] = useState(null)
+  const [dashboard, setDashboard] = useState(null)
   const trendsRef = useRef(null)
   const checkinRef = useRef(null)
 
@@ -61,12 +73,58 @@ export default function AthleteDashboard() {
     return () => { document.body.style.overflow = '' }
   }, [mobileMenuOpen])
 
-  const athlete = DEMO_ATHLETE
-  const latestHealth = useMemo(() => athlete.health[athlete.health.length - 1], [athlete])
-  const latestCheckin = useMemo(() => athlete.checkins[athlete.checkins.length - 1], [athlete])
+  // Load real athlete dashboard from backend
+  useEffect(() => {
+    if (isMockMode()) return
+    let cancelled = false
+    setLoading(true)
+    apiGetAthleteDashboard()
+      .then(data => {
+        if (cancelled) return
+        if (data?.success) {
+          setDashboard(data)
+          setError(null)
+        } else {
+          setError(data?.message || 'Failed to load dashboard')
+        }
+      })
+      .catch(err => {
+        if (cancelled) return
+        setError(err?.message || 'Network error')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const athlete = useMemo(() => {
+    if (isMockMode()) return null
+    if (!dashboard) return null
+    // Backend returns newest-first; UI expects oldest-first (Mon->Sun)
+    const health = [...(dashboard.health || [])].reverse()
+    const training = [...(dashboard.training || [])].reverse()
+    const checkins = [...(dashboard.checkins || [])].reverse()
+    const summary = dashboard.summary || {}
+    return {
+      ...dashboard.athlete,
+      team: dashboard.athlete?.teamName || dashboard.athlete?.team || '',
+      health,
+      training,
+      checkins,
+      status: summary.status || 'good',
+      hrvTrend: computeHrvTrend(health),
+      currentHRV: summary.hrv ?? (health[health.length - 1]?.hrv || '-'),
+      currentRHR: summary.rhr ?? (health[health.length - 1]?.rhr || '-'),
+      currentSleep: summary.sleepHours ?? (health[health.length - 1]?.sleepHours || '-'),
+    }
+  }, [dashboard])
+
+  const latestHealth = useMemo(() => athlete?.health?.[athlete.health.length - 1] || {}, [athlete])
+  const latestCheckin = useMemo(() => athlete?.checkins?.[athlete.checkins.length - 1] || { mood: 3, motivation: 5, fatigue: 5, journal: '' }, [athlete])
   const { alerts, totalAlerts, activeNudgesForAthlete, respondToNudge } = useAlerts()
-  const myAlerts = useMemo(() => alerts.filter(a => a.athleteId === athlete.id), [alerts, athlete.id])
-  const pendingNudges = useMemo(() => activeNudgesForAthlete(athlete.id), [activeNudgesForAthlete, athlete.id])
+  const myAlerts = useMemo(() => alerts.filter(a => a.athleteId === athlete?.id), [alerts, athlete?.id])
+  const pendingNudges = useMemo(() => athlete ? activeNudgesForAthlete(athlete.id) : [], [activeNudgesForAthlete, athlete])
 
   // Interactive check-in state — starts with latest values but user can change
   const [checkinForm, setCheckinForm] = useState({
@@ -76,12 +134,23 @@ export default function AthleteDashboard() {
     journal: latestCheckin.journal || '',
   })
 
+  // Sync form when data loads
+  useEffect(() => {
+    setCheckinForm({
+      mood: latestCheckin.mood,
+      motivation: latestCheckin.motivation,
+      fatigue: latestCheckin.fatigue,
+      journal: latestCheckin.journal || '',
+    })
+  }, [latestCheckin.mood, latestCheckin.motivation, latestCheckin.fatigue, latestCheckin.journal])
+
   // Low Period Support — AI-generated cards
   const [lowPeriodData, setLowPeriodData] = useState(null)
   const [lowPeriodLoading, setLowPeriodLoading] = useState(false)
   const [lowPeriodDemo, setLowPeriodDemo] = useState(false)
 
   useEffect(() => {
+    if (!athlete) return
     if (athlete.status === 'danger' || athlete.status === 'urgent') {
       setLowPeriodLoading(true)
       getLowPeriodSupport(athlete, checkinForm)
@@ -94,33 +163,80 @@ export default function AthleteDashboard() {
         })
         .finally(() => setLowPeriodLoading(false))
     }
-  }, [athlete.status, athlete.id])
+  }, [athlete?.status, athlete?.id, checkinForm])
 
   const showToast = useCallback((msg) => {
     setToast({ visible: true, message: msg })
     setTimeout(() => setToast({ visible: false, message: '' }), 2500)
   }, [])
 
-  const handleSaveCheckin = useCallback(() => {
+  const handleSaveCheckin = useCallback(async () => {
+    if (!athlete) return
     pendingNudges.forEach(nudge => {
       respondToNudge(nudge.id, checkinForm)
     })
-    const nudgeCount = pendingNudges.length
-    if (nudgeCount > 0) {
-      showToast(`Check-in saved! Your coach received your response to ${nudgeCount} nudge${nudgeCount > 1 ? 's' : ''}.`)
-    } else {
-      showToast('Check-in saved! Your coach has been notified.')
+    try {
+      await apiSubmitCheckin(checkinForm)
+      // Refresh dashboard to show the new check-in
+      const refreshed = await apiGetAthleteDashboard()
+      if (refreshed?.success) setDashboard(refreshed)
+      const nudgeCount = pendingNudges.length
+      if (nudgeCount > 0) {
+        showToast(`Check-in saved! Your coach received your response to ${nudgeCount} nudge${nudgeCount > 1 ? 's' : ''}.`)
+      } else {
+        showToast('Check-in saved! Your coach has been notified.')
+      }
+    } catch (err) {
+      showToast(err?.message || 'Failed to save check-in')
     }
-  }, [pendingNudges, respondToNudge, checkinForm, showToast])
+  }, [pendingNudges, respondToNudge, checkinForm, showToast, athlete])
 
   const morningSummary = useMemo(() => {
-    const hrvChange = Math.abs(Math.round((athlete.health[6].hrv - athlete.health[5].hrv) / athlete.health[5].hrv * 100))
-    if (athlete.status === 'danger' || athlete.status === 'urgent') {
-      return `Your HRV has declined ${hrvChange}% over the past day and has been trending down for 3+ days. We strongly recommend focusing on recovery today. Consider talking to your coach.`
+    if (!athlete || !athlete.health || athlete.health.length < 2) {
+      return 'Loading your morning summary...'
     }
-    const hrvTrend = athlete.health[5].hrv < athlete.health[6].hrv ? 'up' : 'down'
-    return `Last night you slept ${latestHealth.sleepHours} hours. Your HRV is ${hrvTrend} ${hrvChange}% from yesterday. Recovery status: ${athlete.hrvTrend === 'improving' ? 'improving' : 'needs attention'}.`
+    const prev = athlete.health[athlete.health.length - 2]
+    const curr = athlete.health[athlete.health.length - 1]
+    const hrvChange = prev.hrv ? Math.abs(Math.round((curr.hrv - prev.hrv) / prev.hrv * 100)) : 0
+    if (athlete.status === 'danger' || athlete.status === 'urgent') {
+      return `Your HRV has changed ${hrvChange}% over the past day and has been trending down. We strongly recommend focusing on recovery today. Consider talking to your coach.`
+    }
+    const hrvTrend = prev.hrv < curr.hrv ? 'up' : 'down'
+    return `Last night you slept ${latestHealth.sleepHours || '-'} hours. Your HRV is ${hrvTrend} ${hrvChange}% from yesterday. Recovery status: ${athlete.hrvTrend === 'improving' ? 'improving' : 'needs attention'}.`
   }, [athlete, latestHealth])
+
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
+        <Sidebar role="athlete" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-pivot-500 dark:text-slate-400">
+            <div className="w-8 h-8 border-2 border-pivot-200 dark:border-slate-600 border-t-accent-blue rounded-full animate-spin" />
+            <p className="text-sm">Loading your dashboard...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !athlete) {
+    return (
+      <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
+        <Sidebar role="athlete" />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="glass-card p-6 max-w-md text-center">
+            <p className="text-sm text-pivot-600 dark:text-slate-300 mb-3">{error || 'Unable to load dashboard'}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl bg-accent-blue text-white text-sm font-medium hover:bg-blue-600 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
@@ -353,7 +469,7 @@ export default function AthleteDashboard() {
                   value={latestHealth.hrv}
                   unit="ms"
                   trend={athlete.hrvTrend === 'improving' ? 'up' : 'down'}
-                  trendValue={`${Math.abs(Math.round((latestHealth.hrv - athlete.health[5].hrv) / athlete.health[5].hrv * 100))}%`}
+                  trendValue={`${Math.abs(Math.round((latestHealth.hrv - (athlete.health[athlete.health.length - 2]?.hrv || latestHealth.hrv)) / (athlete.health[athlete.health.length - 2]?.hrv || latestHealth.hrv) * 100))}%`}
                   color={athlete.status === 'danger' || athlete.status === 'urgent' ? 'rose' : 'blue'}
                   onClick={() => trendsRef.current?.scrollIntoView({ behavior: 'smooth' })}
                 />
@@ -364,8 +480,8 @@ export default function AthleteDashboard() {
                   label="Resting Heart Rate"
                   value={latestHealth.rhr}
                   unit="bpm"
-                  trend={latestHealth.rhr > athlete.health[5].rhr ? 'up' : 'down'}
-                  trendValue={Math.abs(latestHealth.rhr - athlete.health[5].rhr)}
+                  trend={latestHealth.rhr > (athlete.health[athlete.health.length - 2]?.rhr || latestHealth.rhr) ? 'up' : 'down'}
+                  trendValue={Math.abs(latestHealth.rhr - (athlete.health[athlete.health.length - 2]?.rhr || latestHealth.rhr))}
                   color="rose"
                   onClick={() => trendsRef.current?.scrollIntoView({ behavior: 'smooth' })}
                 />

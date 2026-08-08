@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown, Send, X } from 'lucide-react'
+import { Bell, AlertTriangle, Search, Filter, Clock, CheckCircle2, MessageCircle, CheckCheck, ChevronDown, ChevronRight, Users, Send, X, Loader2 } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
+import ConversationModal from '../ui/ConversationModal'
 import { useAlerts } from '../../context/AlertContext'
+import { useUser } from '../../context/UserContext'
 import { isMockMode } from '../../config/api'
-import { apiListAthletes, apiSendMessage } from '../../config/api'
+import { apiListAthletes, apiListCoaches, apiListMessages, apiGetUnreadCount, apiSendMessage } from '../../config/api'
 
 function Toast({ message, visible, variant }) {
   const bg = variant === 'error' ? 'bg-red-600' : 'bg-emerald-600'
@@ -50,6 +52,7 @@ const PAGE_SIZE = 8
 
 export default function CoachAlertCenter() {
   const { alerts, totalAlerts, alertCount } = useAlerts()
+  const { user: me } = useUser()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialQuery = searchParams.get('q') || ''
   const [dismissedAlerts, setDismissedAlerts] = useState(new Set())
@@ -66,7 +69,6 @@ export default function CoachAlertCenter() {
       setHistorySearch(q)
       setHistoryPage(1)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
   const updateHistorySearch = (next) => {
@@ -79,17 +81,89 @@ export default function CoachAlertCenter() {
     setSearchParams(params, { replace: true })
   }
 
-  // Athletes directory + send-message modal state
+  // Athletes directory + conversation modal state
   const [athletes, setAthletes] = useState([])
-  const [composeTarget, setComposeTarget] = useState(null) // alert object whose athlete we're messaging
-  const [messageBody, setMessageBody] = useState('')
-  const [sending, setSending] = useState(false)
+  const [conversationUser, setConversationUser] = useState(null)
   const menuRef = useRef(null)
+
+  // Coaches directory + notify-coaches modal state
+  const [coaches, setCoaches] = useState([])
+  const [coachesLoading, setCoachesLoading] = useState(false)
+  const [notifyAlert, setNotifyAlert] = useState(null)
+  const [notifySelected, setNotifySelected] = useState(new Set())
+  const [notifyBody, setNotifyBody] = useState('')
+  const [notifySending, setNotifySending] = useState(false)
+
+  // Coach inbox (so other coaches can receive notifications)
+  const [coachConversations, setCoachConversations] = useState([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   const showToast = (msg, variant = 'success') => {
     setToast({ visible: true, message: msg, variant })
     setTimeout(() => setToast({ visible: false, message: '', variant: 'success' }), 2500)
   }
+
+  const loadCoachInbox = async () => {
+    if (isMockMode()) return
+    setMessagesLoading(true)
+    try {
+      const [messagesData, countData] = await Promise.all([
+        apiListMessages({ limit: 100 }),
+        apiGetUnreadCount(),
+      ])
+      setCoachConversations(messagesData.messages || [])
+      setUnreadCount(countData.unreadCount || 0)
+    } catch {
+      setCoachConversations([])
+      setUnreadCount(0)
+    } finally {
+      setMessagesLoading(false)
+    }
+  }
+
+  const groupedConversations = useMemo(() => {
+    const map = new Map()
+    coachConversations.forEach(msg => {
+      const other = {
+        id: msg.otherUserId,
+        name: msg.otherUserName || 'Unknown',
+        role: msg.otherUserRole || '',
+      }
+      if (!map.has(other.id) || new Date(msg.createdAt) > new Date(map.get(other.id).createdAt)) {
+        map.set(other.id, { other, latest: msg })
+      }
+    })
+    return Array.from(map.values()).sort((a, b) => new Date(b.latest.createdAt) - new Date(a.latest.createdAt))
+  }, [coachConversations])
+
+  // Don't suggest notifying coaches who have the same role as the current user.
+  // Head Coaches additionally never notify any Head Coach through this flow.
+  const [coachSearch, setCoachSearch] = useState('')
+  const coachListRef = useRef(null)
+
+  const selectableCoaches = useMemo(() => {
+    if (!me?.coachRole) return coaches
+    const myRole = String(me.coachRole).trim().toLowerCase()
+    if (myRole === 'head coach') {
+      return coaches
+        .filter(c => String(c.coachRole || '').trim().toLowerCase() !== 'head coach')
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    }
+    return coaches
+      .filter(c => String(c.coachRole || '').trim().toLowerCase() !== myRole)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+  }, [coaches, me?.coachRole])
+
+  const filteredSelectableCoaches = useMemo(() => {
+    const q = coachSearch.trim().toLowerCase()
+    if (!q) return selectableCoaches
+    return selectableCoaches.filter(c =>
+      String(c.name || '').toLowerCase().includes(q) ||
+      String(c.email || '').toLowerCase().includes(q) ||
+      String(c.coachRole || '').toLowerCase().includes(q)
+    )
+  }, [selectableCoaches, coachSearch])
 
   // Filter active alerts only by dismissed set
   const activeAlerts = alerts.filter((_, i) => !dismissedAlerts.has(i))
@@ -101,27 +175,32 @@ export default function CoachAlertCenter() {
     showToast(`Alert for ${alert.athleteName} marked as addressed`)
   }
 
-  // Load athletes directory once (real mode only) so we can resolve alert
-  // names to user IDs for sending messages.
+  // Load athletes + coaches directories once (real mode only) so we can resolve
+  // alert names to user IDs for sending messages and notify peer coaches.
   useEffect(() => {
-    if (isMockMode()) return
+    if (isMockMode()) {
+      // Mock coaches for demo
+      setCoaches([
+        { id: 101, name: 'Assistant Coach Smith', email: 'smith@pivot.dev', sport: 'rowing', coachRole: 'Assistant' },
+        { id: 102, name: 'Head Coach Williams', email: 'williams@pivot.dev', sport: 'rowing', coachRole: 'Head' },
+      ])
+      setCoachConversations([])
+      return
+    }
     let cancelled = false
     apiListAthletes()
       .then(data => { if (!cancelled) setAthletes(data.athletes || []) })
       .catch(() => { if (!cancelled) setAthletes([]) })
+
+    setCoachesLoading(true)
+    apiListCoaches()
+      .then(data => { if (!cancelled) setCoaches(data.coaches || []) })
+      .catch(() => { if (!cancelled) setCoaches([]) })
+      .finally(() => { if (!cancelled) setCoachesLoading(false) })
+
+    loadCoachInbox()
     return () => { cancelled = true }
   }, [])
-
-  const openComposeFor = (alert) => {
-    setActionMenu(null)
-    setComposeTarget(alert)
-    setMessageBody('')
-  }
-
-  const closeCompose = () => {
-    setComposeTarget(null)
-    setMessageBody('')
-  }
 
   const resolveRecipient = (alert) => {
     if (!alert) return null
@@ -133,39 +212,91 @@ export default function CoachAlertCenter() {
         || null
   }
 
-  const handleSendMessage = async () => {
-    if (!composeTarget) return
-    const recipient = resolveRecipient(composeTarget)
+  const openConversationFor = (alert) => {
+    setActionMenu(null)
+    const recipient = resolveRecipient(alert)
     if (!recipient) {
-      showToast(`Could not find athlete "${composeTarget.athleteName}" in your roster`, 'error')
+      showToast(`Could not find athlete "${alert.athleteName}" in your roster`, 'error')
       return
     }
-    const body = messageBody.trim()
-    if (!body) {
-      showToast('Please type a message', 'error')
-      return
-    }
+    setConversationUser({
+      id: recipient.id,
+      name: recipient.name,
+      role: recipient.role,
+    })
+  }
+
+  const openNotifyModal = (alert) => {
+    setActionMenu(null)
+    setNotifyAlert(alert)
+    setNotifySelected(new Set())
+    setCoachSearch('')
+    setNotifyBody(
+      `FYI: ${alert.athleteName} has a ${alert.level?.toUpperCase() || 'ALERT'} — ${alert.type}. Please keep an eye on this athlete.`
+    )
+    // Reset coach list scroll to top so the first coach (e.g. Assistant Coach) is visible
+    requestAnimationFrame(() => {
+      if (coachListRef.current) coachListRef.current.scrollTop = 0
+    })
+  }
+
+  const closeNotifyModal = () => {
+    setNotifyAlert(null)
+    setNotifySelected(new Set())
+    setNotifyBody('')
+    setNotifySending(false)
+  }
+
+  const toggleCoachSelection = (id) => {
+    setNotifySelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAllCoaches = () => {
+    // Select only the coaches currently visible in the list (respects search filter)
+    setNotifySelected(new Set(filteredSelectableCoaches.map(c => c.id)))
+  }
+
+  const selectNoCoaches = () => {
+    setNotifySelected(new Set())
+  }
+
+  const handleNotifyCoaches = async () => {
+    if (!notifyAlert || notifySelected.size === 0 || !notifyBody.trim()) return
     if (isMockMode()) {
-      // Local-only acknowledgement in mock mode
-      showToast(`Message sent to ${recipient.name} (mock)`)
-      closeCompose()
+      showToast(`Notification sent to ${notifySelected.size} coach(s) (mock)`)
+      closeNotifyModal()
       return
     }
-    setSending(true)
+    setNotifySending(true)
     try {
-      await apiSendMessage({
-        recipientId: recipient.id,
-        body,
-        subject: `Re: ${composeTarget.type}`,
-        alertLevel: composeTarget.level,
-        alertType: composeTarget.type,
-      })
-      showToast(`Message sent to ${recipient.name}`)
-      closeCompose()
+      const results = await Promise.allSettled(
+        Array.from(notifySelected).map(id =>
+          apiSendMessage({
+            recipientId: id,
+            body: notifyBody.trim(),
+            subject: `Alert: ${notifyAlert.athleteName} — ${notifyAlert.type}`,
+            alertLevel: notifyAlert.level,
+            alertType: notifyAlert.type,
+          })
+        )
+      )
+      const failed = results.filter(r => r.status === 'rejected')
+      if (failed.length) {
+        showToast(`Sent to ${notifySelected.size - failed.length} of ${notifySelected.size} coaches`, 'error')
+      } else {
+        showToast(`Notification sent to ${notifySelected.size} coach(s)`)
+      }
+      await loadCoachInbox()
+      closeNotifyModal()
     } catch (err) {
-      showToast(err.message || 'Failed to send message', 'error')
+      showToast(err.message || 'Failed to send notifications', 'error')
     } finally {
-      setSending(false)
+      setNotifySending(false)
     }
   }
 
@@ -207,19 +338,80 @@ export default function CoachAlertCenter() {
             )}
           </motion.div>
 
+          {/* Coach Messages / Notifications */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                <MessageCircle size={14} className="text-accent-blue" />
+                Messages
+                {unreadCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                    {unreadCount}
+                  </span>
+                )}
+              </h3>
+              <button
+                onClick={loadCoachInbox}
+                disabled={messagesLoading}
+                className="text-[11px] text-pivot-500 dark:text-slate-400 hover:text-pivot-700 dark:hover:text-slate-200 transition-colors disabled:opacity-50"
+              >
+                {messagesLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            {groupedConversations.length === 0 ? (
+              <div className="glass-card p-5 text-center">
+                <p className="text-sm text-pivot-400 dark:text-slate-500">No messages yet</p>
+                <p className="text-xs text-pivot-400 mt-1">Use “Notify Coaches” on an alert to alert your staff.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {groupedConversations.map(({ other, latest }) => {
+                  const isUnread = !latest.isSender && !latest.readAt
+                  return (
+                    <button
+                      key={other.id}
+                      onClick={() => setConversationUser(other)}
+                      className={`glass-card p-3 text-left flex items-center gap-3 hover:shadow-elevated transition-all active:scale-[0.99] ${
+                        isUnread ? 'border-l-4 border-l-accent-blue' : ''
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent-teal to-teal-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                        {(other.name || '?').charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-pivot-800 dark:text-slate-200 truncate">
+                            {other.name}
+                          </span>
+                          <span className="text-[10px] text-pivot-400 shrink-0">
+                            {new Date(latest.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className={`text-sm truncate ${isUnread ? 'text-pivot-900 dark:text-white font-medium' : 'text-pivot-500 dark:text-slate-400'}`}>
+                          {latest.isSender ? 'You: ' : ''}{latest.body}
+                        </p>
+                      </div>
+                      {isUnread && <span className="w-2 h-2 rounded-full bg-accent-blue shrink-0" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </motion.div>
+
           {/* Active Alerts */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
             <h3 className="text-xs font-semibold text-pivot-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
               <AlertTriangle size={14} className="text-rose-500" />
               Active Alerts ({activeAlerts.length})
-              {searchQuery && <span className="font-normal text-pivot-400">— filtered</span>}
+              {historySearch && <span className="font-normal text-pivot-400">— filtered</span>}
             </h3>
             <div className="space-y-2">
               {activeAlerts.length === 0 ? (
                 <div className="glass-card p-8 text-center">
                   <CheckCheck size={40} className="text-emerald-400 mx-auto mb-3" />
                   <p className="font-semibold text-pivot-700 dark:text-slate-200">All Clear</p>
-                  <p className="text-sm text-pivot-400 mt-1">{searchQuery ? 'No alerts match your search.' : 'No active alerts at this time.'}</p>
+                  <p className="text-sm text-pivot-400 mt-1">{historySearch ? 'No alerts match your search.' : 'No active alerts at this time.'}</p>
                 </div>
               ) : (
                 activeAlerts.map((alert, i) => (
@@ -269,10 +461,16 @@ export default function CoachAlertCenter() {
                                   <CheckCheck size={14} className="text-emerald-500" /> Mark Addressed
                                 </button>
                                 <button
-                                  onClick={() => openComposeFor(alert)}
+                                  onClick={() => openConversationFor(alert)}
                                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-pivot-50 dark:hover:bg-slate-700/50 transition-colors"
                                 >
                                   <MessageCircle size={14} className="text-accent-blue" /> Contact Athlete
+                                </button>
+                                <button
+                                  onClick={() => openNotifyModal(alert)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-pivot-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                                >
+                                  <Users size={14} className="text-amber-500" /> Notify Coaches
                                 </button>
                               </motion.div>
                             )}
@@ -419,66 +617,178 @@ export default function CoachAlertCenter() {
 
       <Toast message={toast.message} visible={toast.visible} variant={toast.variant} />
 
-      {/* Compose message modal */}
+      {/* Notify coaches modal */}
       <AnimatePresence>
-        {composeTarget && (
+        {notifyAlert && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={closeNotifyModal}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-            onClick={closeCompose}
           >
             <motion.div
-              initial={{ scale: 0.9, y: 20 }}
+              initial={{ scale: 0.95, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
+              exit={{ scale: 0.95, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="glass-card p-5 rounded-2xl shadow-2xl border border-pivot-200 dark:border-slate-600 w-full max-w-md"
+              className="glass-card rounded-2xl shadow-2xl border border-pivot-200 dark:border-slate-600 w-full max-w-md flex flex-col max-h-[85vh]"
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-pivot-100 dark:border-slate-700/30">
                 <div className="flex items-center gap-2">
-                  <MessageCircle size={18} className="text-accent-blue" />
+                  <Users size={18} className="text-amber-500" />
                   <h3 className="text-sm font-semibold text-pivot-900 dark:text-white">
-                    Message to {composeTarget.athleteName}
+                    Notify Coaches
                   </h3>
                 </div>
                 <button
-                  onClick={closeCompose}
-                  className="p-1 rounded-lg text-pivot-400 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                  onClick={closeNotifyModal}
+                  className="p-1.5 rounded-lg text-pivot-400 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </div>
-              <p className="text-xs text-pivot-500 dark:text-slate-400 mb-3">
-                Re: <span className="font-medium text-pivot-700 dark:text-slate-300">{composeTarget.type}</span>
-              </p>
-              <textarea
-                value={messageBody}
-                onChange={(e) => setMessageBody(e.target.value)}
-                placeholder={`Write a message to ${composeTarget.athleteName}…`}
-                rows={5}
-                className="w-full px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-blue/40 focus:border-accent-blue resize-none"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2 mt-3">
+
+              <div className="p-5 overflow-y-auto custom-scrollbar flex-1">
+                <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30">
+                  <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                    {notifyAlert.athleteName}
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                    {notifyAlert.type} ({notifyAlert.level?.toUpperCase()})
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-pivot-700 dark:text-slate-300">
+                    Select coaches
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={selectAllCoaches}
+                      className="text-[11px] text-accent-teal hover:underline"
+                    >
+                      Select all
+                    </button>
+                    <span className="text-pivot-300">|</span>
+                    <button
+                      onClick={selectNoCoaches}
+                      className="text-[11px] text-pivot-500 hover:text-pivot-700 dark:hover:text-slate-300"
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative mb-2">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-pivot-400" />
+                  <input
+                    type="text"
+                    value={coachSearch}
+                    onChange={(e) => setCoachSearch(e.target.value)}
+                    placeholder="Find a coach…"
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-xs text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
+                  />
+                </div>
+
+                {coachesLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 size={20} className="text-accent-blue animate-spin" />
+                  </div>
+                ) : selectableCoaches.length === 0 ? (
+                  <p className="text-xs text-pivot-500 dark:text-slate-400 py-4 text-center">
+                    No other coaches available to notify.
+                  </p>
+                ) : (
+                  <div
+                    ref={coachListRef}
+                    className="space-y-1.5 max-h-[280px] overflow-y-auto custom-scrollbar pr-1 mb-4"
+                  >
+                    {filteredSelectableCoaches.map(coach => (
+                      <label
+                        key={coach.id}
+                        className="flex items-center gap-3 p-2.5 rounded-xl border border-pivot-100 dark:border-slate-700/50 hover:bg-pivot-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={notifySelected.has(coach.id)}
+                          onChange={() => toggleCoachSelection(coach.id)}
+                          className="w-4 h-4 rounded border-pivot-300 text-accent-teal focus:ring-accent-teal/40"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-pivot-800 dark:text-slate-200 truncate">
+                              {coach.name}
+                            </p>
+                            <span className="px-1.5 py-0.5 rounded-md bg-pivot-100 dark:bg-slate-700 text-[10px] text-pivot-600 dark:text-slate-300 shrink-0">
+                              {coach.coachRole || 'Coach'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-pivot-400 truncate">
+                            {coach.email || ''}
+                          </p>
+                        </div>
+                      </label>
+                    ))}
+                    {filteredSelectableCoaches.length === 0 && coachSearch && (
+                      <p className="text-xs text-pivot-500 dark:text-slate-400 py-3 text-center">
+                        No coaches match “{coachSearch}”
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {coaches.length > selectableCoaches.length && me?.coachRole && (
+                  <p className="text-[10px] text-pivot-400 mb-3">
+                    {String(me.coachRole).trim().toLowerCase() === 'head coach'
+                      ? 'Head Coaches are hidden from this notification list.'
+                      : `Coaches with the “${me.coachRole}” role are hidden because that is your role.`}
+                  </p>
+                )}
+
+                <label className="block text-xs font-semibold text-pivot-700 dark:text-slate-300 mb-1.5">
+                  Message
+                </label>
+                <textarea
+                  value={notifyBody}
+                  onChange={(e) => setNotifyBody(e.target.value)}
+                  rows={4}
+                  placeholder="Write a short note to the selected coaches…"
+                  className="w-full px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:outline-none focus:ring-2 focus:ring-accent-teal/40 focus:border-accent-teal resize-none"
+                />
+                <p className="text-[10px] text-pivot-400 mt-1.5">
+                  {notifySelected.size} coach{notifySelected.size === 1 ? '' : 'es'} selected
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-pivot-100 dark:border-slate-700/30">
                 <button
-                  onClick={closeCompose}
-                  className="px-4 py-2 rounded-xl text-sm text-pivot-600 dark:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                  onClick={closeNotifyModal}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-pivot-600 dark:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSendMessage}
-                  disabled={sending || !messageBody.trim()}
-                  className="px-4 py-2 rounded-xl bg-accent-teal text-white text-sm font-medium hover:bg-teal-600 transition-colors active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleNotifyCoaches}
+                  disabled={notifySending || notifySelected.size === 0 || !notifyBody.trim() || coachesLoading}
+                  className="px-4 py-2 rounded-xl bg-accent-teal text-white text-xs font-medium hover:bg-teal-600 transition-colors active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Send size={14} />
-                  {sending ? 'Sending…' : 'Send'}
+                  {notifySending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  {notifySending ? 'Sending…' : `Send to ${notifySelected.size}`}
                 </button>
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Conversation modal */}
+      <AnimatePresence>
+        {conversationUser && (
+          <ConversationModal
+            otherUser={conversationUser}
+            onClose={() => setConversationUser(null)}
+          />
         )}
       </AnimatePresence>
     </div>
