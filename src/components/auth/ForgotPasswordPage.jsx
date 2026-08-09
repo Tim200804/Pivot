@@ -12,6 +12,8 @@ import {
   Loader2,
   Send,
   ShieldCheck,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext'
 import { apiForgotPassword, apiVerifyResetCode, apiResetPassword } from '../../config/api'
