@@ -174,9 +174,18 @@ export default function SignInForm({ role, sport, savedForRole }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
-          Password {isMockMode() && <span className="text-pivot-400 font-normal">(any password works)</span>}
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300">Password</label>
+          {!isMockMode() && (
+            <button
+              type="button"
+              onClick={() => navigate('/forgot-password')}
+              className="text-xs text-accent-blue hover:text-blue-600 transition-colors"
+            >
+              Forgot password?
+            </button>
+          )}
+        </div>
         <div className="relative">
           <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-pivot-400 pointer-events-none" />
           <input
