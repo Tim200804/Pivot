@@ -10,6 +10,7 @@ import ErrorBoundary from './components/ui/ErrorBoundary'
 
 // Eager load only the login page for fast first paint
 import LoginPage from './components/auth/LoginPage'
+import ForgotPasswordPage from './components/auth/ForgotPasswordPage'
 
 // Lazy load all other routes to reduce initial bundle
 const AthleteOnboarding = lazy(() => import('./components/auth/AthleteOnboarding'))
@@ -74,6 +75,7 @@ function AnimatedRoutes() {
             <Routes location={location}>
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
               {/* Athlete routes */}
               <Route element={<ProtectedRoute allowedRole="athlete" />}>

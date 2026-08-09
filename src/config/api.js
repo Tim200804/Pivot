@@ -210,6 +210,29 @@ export async function apiGetOptions({ role, sport } = {}) {
   return apiFetch(`/api/auth/options${qs ? `?${qs}` : ''}`, { method: 'GET' })
 }
 
+/* ─── Password Reset API ─── */
+
+export async function apiForgotPassword(email) {
+  return apiFetch('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function apiVerifyResetCode(email, code) {
+  return apiFetch('/api/auth/verify-reset-code', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  })
+}
+
+export async function apiResetPassword(email, code, newPassword) {
+  return apiFetch('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, code, newPassword }),
+  })
+}
+
 /* ─── Schools API ─── */
 
 export async function apiSearchSchools(query) {
