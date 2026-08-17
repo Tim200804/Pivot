@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronRight, XCircle, Activity, Heart, Moon, Users, GraduationCap, Ruler, Weight, LayoutGrid, List, Download, CheckSquare, Square, CheckCircle2 } from 'lucide-react'
+import { Search, ChevronRight, XCircle, Activity, Heart, Moon, Users, GraduationCap, Ruler, Weight, LayoutGrid, List, Download, CheckSquare, Square, CheckCircle2, UserPlus } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
 import HealthTrendChart from '../ui/HealthTrendChart'
 import { useTheme } from '../../context/ThemeContext'
 import { useAlerts } from '../../context/AlertContext'
+import { isMockMode, apiListCoaches, apiAssignAthletes, apiGetHealthMetrics } from '../../config/api'
 
 function Toast({ message, visible }) {
   return (
@@ -35,10 +36,79 @@ export default function CoachRoster() {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toast, setToast] = useState({ visible: false, message: '' })
 
+  // Assign-to-coach modal state
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [coaches, setCoaches] = useState([])
+  const [selectedCoachId, setSelectedCoachId] = useState('')
+  const [assignLoading, setAssignLoading] = useState(false)
+
+  // Detail modal health history
+  const [detailHealth, setDetailHealth] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
   const showToast = (msg) => {
     setToast({ visible: true, message: msg })
     setTimeout(() => setToast({ visible: false, message: '' }), 2500)
   }
+
+  const openAssign = async () => {
+    setAssignOpen(true)
+    setSelectedCoachId('')
+    try {
+      const res = await apiListCoaches()
+      setCoaches(res?.coaches || [])
+    } catch {
+      setCoaches([])
+    }
+  }
+
+  const handleAssign = async () => {
+    const coachId = Number(selectedCoachId)
+    if (!coachId || selectedIds.size === 0) return
+    setAssignLoading(true)
+    try {
+      const res = await apiAssignAthletes({ athleteIds: Array.from(selectedIds), coachId })
+      showToast(res?.message || `Assigned ${selectedIds.size} athlete(s)`)
+      setSelectedIds(new Set())
+      setAssignOpen(false)
+    } catch (err) {
+      showToast(err.message || 'Assignment failed')
+    } finally {
+      setAssignLoading(false)
+    }
+  }
+
+  // Load 14-day health history when opening an athlete detail modal
+  useEffect(() => {
+    if (!selectedAthlete?.id) {
+      setDetailHealth(null)
+      return
+    }
+    if (isMockMode()) {
+      setDetailHealth(selectedAthlete.health || [])
+      return
+    }
+    let cancelled = false
+    setDetailLoading(true)
+    apiGetHealthMetrics(selectedAthlete.id, { limit: 14 })
+      .then(res => {
+        if (cancelled) return
+        const metrics = (res?.metrics || []).map(r => ({
+          day: r.day || r.date,
+          hrv: r.hrv,
+          rhr: r.rhr,
+          sleepHours: r.sleepHours ?? r.sleep_hours,
+        })).reverse()
+        setDetailHealth(metrics)
+      })
+      .catch(() => {
+        if (!cancelled) setDetailHealth([])
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [selectedAthlete?.id])
 
   const filtered = searchQuery
     ? athletes.filter(a => a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.school?.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -153,6 +223,13 @@ export default function CoachRoster() {
                     {selectedIds.size === sortedByAlert.length ? 'Deselect All' : 'Select All'}
                   </button>
                   <span className="text-xs text-pivot-400">{selectedIds.size} athlete{selectedIds.size > 1 ? 's' : ''} selected</span>
+                  <button
+                    onClick={openAssign}
+                    className="text-xs font-medium flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent-teal text-white hover:bg-accent-teal/90 transition-colors"
+                  >
+                    <UserPlus size={13} />
+                    Assign to Coach
+                  </button>
                 </div>
                 <button
                   onClick={() => setSelectedIds(new Set())}
@@ -252,13 +329,18 @@ export default function CoachRoster() {
                       </div>
 
                       <p className="text-xs text-pivot-500 dark:text-slate-400 mb-2">
-                        <span className="truncate">{athlete.position} · {athlete.height}cm / {athlete.weight}kg · Age {athlete.age}</span>
+                        <span className="truncate">
+                          {athlete.position}
+                          {athlete.height ? ` · ${athlete.height}cm` : ''}
+                          {athlete.weight ? ` / ${athlete.weight}kg` : ''}
+                          {athlete.age ? ` · Age ${athlete.age}` : ''}
+                        </span>
                       </p>
 
                       <div className="flex gap-4 text-xs">
-                        <span className="text-pivot-400">HRV <span className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentHRV}</span></span>
-                        <span className="text-pivot-400">RHR <span className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentRHR}</span></span>
-                        <span className="text-pivot-400">Sleep <span className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentSleep}h</span></span>
+                        <span className="text-pivot-400">HRV <span className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentHRV ?? '-'}</span></span>
+                        <span className="text-pivot-400">RHR <span className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentRHR ?? '-'}</span></span>
+                        <span className="text-pivot-400">Sleep <span className="font-semibold text-pivot-700 dark:text-slate-300">{athlete.currentSleep ? `${athlete.currentSleep}h` : '-'}</span></span>
                       </div>
 
                       {alerts.filter(a => a.athleteId === athlete.id).length > 0 && (
@@ -281,6 +363,76 @@ export default function CoachRoster() {
           <div className="h-4" />
         </main>
       </div>
+
+      {/* Assign to Coach Modal */}
+      <AnimatePresence>
+        {assignOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/30 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setAssignOpen(false) }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="glass-card p-6 w-full max-w-md"
+            >
+              <h3 className="text-lg font-bold text-pivot-900 dark:text-white mb-1">Assign to Coach</h3>
+              <p className="text-sm text-pivot-400 mb-4">
+                {selectedIds.size} athlete{selectedIds.size > 1 ? 's' : ''} selected
+              </p>
+              {coaches.length === 0 ? (
+                <p className="text-sm text-pivot-400 mb-4">No other coaches available.</p>
+              ) : (
+                <div className="space-y-2 mb-5 max-h-60 overflow-y-auto">
+                  {coaches.map(coach => (
+                    <label
+                      key={coach.id}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                        selectedCoachId === String(coach.id)
+                          ? 'border-accent-teal bg-accent-teal/10'
+                          : 'border-pivot-200 dark:border-slate-600 hover:bg-pivot-50 dark:hover:bg-slate-700/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="coach"
+                        value={coach.id}
+                        checked={selectedCoachId === String(coach.id)}
+                        onChange={(e) => setSelectedCoachId(e.target.value)}
+                        className="accent-accent-teal"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-pivot-900 dark:text-white truncate">{coach.name}</p>
+                        <p className="text-xs text-pivot-400 truncate">{coach.email}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setAssignOpen(false)}
+                  className="px-4 py-2 rounded-xl text-sm text-pivot-500 dark:text-slate-400 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssign}
+                  disabled={!selectedCoachId || assignLoading || coaches.length === 0}
+                  className="px-4 py-2 rounded-xl text-sm bg-accent-teal text-white hover:bg-accent-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                >
+                  {assignLoading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                  Assign
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Athlete Detail Modal */}
       <AnimatePresence>
@@ -317,8 +469,13 @@ export default function CoachRoster() {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-pivot-900 dark:text-white">{selectedAthlete.name}</h3>
-                    <p className="text-xs text-pivot-400">{selectedAthlete.school} · {selectedAthlete.team}</p>
-                    <p className="text-xs text-pivot-400">{selectedAthlete.position} · {selectedAthlete.height}cm / {selectedAthlete.weight}kg · Age {selectedAthlete.age}</p>
+                    <p className="text-xs text-pivot-400">{selectedAthlete.school}{selectedAthlete.team ? ` · ${selectedAthlete.team}` : ''}</p>
+                    <p className="text-xs text-pivot-400">
+                      {selectedAthlete.position}
+                      {selectedAthlete.height ? ` · ${selectedAthlete.height}cm` : ''}
+                      {selectedAthlete.weight ? ` / ${selectedAthlete.weight}kg` : ''}
+                      {selectedAthlete.age ? ` · Age ${selectedAthlete.age}` : ''}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedAthlete(null)} className="p-2 rounded-xl hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors active:scale-90">
@@ -328,20 +485,27 @@ export default function CoachRoster() {
 
               <div className="grid grid-cols-3 gap-3 mb-6">
                 <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-900/10 text-center">
-                  <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentHRV}</p>
+                  <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentHRV ?? '-'}</p>
                   <p className="text-[10px] text-pivot-400">HRV (ms)</p>
                 </div>
                 <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-900/10 text-center">
-                  <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentRHR}</p>
+                  <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentRHR ?? '-'}</p>
                   <p className="text-[10px] text-pivot-400">RHR (bpm)</p>
                 </div>
                 <div className="p-3 rounded-2xl bg-teal-50 dark:bg-teal-900/10 text-center">
-                  <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentSleep}h</p>
+                  <p className="text-xl font-bold text-pivot-900 dark:text-white">{selectedAthlete.currentSleep ? `${selectedAthlete.currentSleep}h` : '-'}</p>
                   <p className="text-[10px] text-pivot-400">Sleep</p>
                 </div>
               </div>
 
-              <HealthTrendChart data={selectedAthlete.health} title="Health Trends" metrics={['hrv', 'rhr', 'sleepHours']} darkMode={isDark} />
+              {detailLoading ? (
+                <div className="flex items-center justify-center py-12 gap-3">
+                  <div className="w-6 h-6 border-2 border-accent-teal border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm text-pivot-400">Loading health history...</span>
+                </div>
+              ) : (
+                <HealthTrendChart data={detailHealth} title="Health Trends (14 days)" metrics={['hrv', 'rhr', 'sleepHours']} darkMode={isDark} />
+              )}
             </motion.div>
           </motion.div>
         )}

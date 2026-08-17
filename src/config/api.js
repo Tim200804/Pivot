@@ -280,6 +280,13 @@ export async function apiListCoaches() {
   return apiFetch('/api/auth/coaches', { method: 'GET' })
 }
 
+export async function apiAssignAthletes({ athleteIds, coachId }) {
+  return apiFetch('/api/auth/assign-athletes', {
+    method: 'POST',
+    body: JSON.stringify({ athleteIds, coachId }),
+  })
+}
+
 /* ─── Check-ins API ─── */
 
 export async function apiListCheckins({ limit = 30, offset = 0, fields = 'light' } = {}) {

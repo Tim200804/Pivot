@@ -3,6 +3,7 @@ import { ATHLETES, ALERTS } from '../data/mockData'
 import {
   isMockMode,
   apiListAthletes,
+  apiGetTeamSummary,
   apiGetCoachAlerts,
   apiGetAthleteAlerts,
   apiUpdateAlertStatus,
@@ -63,6 +64,7 @@ export function AlertProvider({ children }) {
   }, [user?.id, user?.role])
 
   // In real mode, load the actual athlete roster and real alerts from the backend.
+  // Coaches get full team summary (metrics included); athletes fall back to lightweight list.
   useEffect(() => {
     if (isMockMode()) return
     let cancelled = false
@@ -71,8 +73,22 @@ export function AlertProvider({ children }) {
       setLoading(true)
       setError(null)
       try {
-        const athletesData = await apiListAthletes()
-        if (!cancelled) setRealAthletes(athletesData?.athletes || [])
+        if (user.role === 'coach') {
+          const summaryData = await apiGetTeamSummary()
+          const rawAthletes = summaryData?.summary?.athletes || []
+          // Normalize backend field names to the shape the UI expects
+          const normalized = rawAthletes.map(a => ({
+            ...a,
+            team: a.team || a.team_name || '',
+            currentHRV: a.currentHRV ?? a.hrv ?? '-',
+            currentRHR: a.currentRHR ?? a.rhr ?? '-',
+            currentSleep: a.currentSleep ?? a.sleepHours ?? '-',
+          }))
+          if (!cancelled) setRealAthletes(normalized)
+        } else {
+          const athletesData = await apiListAthletes()
+          if (!cancelled) setRealAthletes(athletesData?.athletes || [])
+        }
       } catch (err) {
         if (!cancelled) {
           setRealAthletes([])
@@ -85,7 +101,7 @@ export function AlertProvider({ children }) {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, refreshAlerts])
+  }, [user?.id, user?.role, refreshAlerts])
 
   const totalAlerts = alerts.length
   const alertCount = useMemo(() => ({

@@ -83,11 +83,13 @@ const baseOptions = {
 }
 
 const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, darkMode }) {
-  const labels = useMemo(() => data.map(d => d.day), [data])
+  const safeData = Array.isArray(data) ? data : []
+  const safeMetrics = Array.isArray(metrics) ? metrics : []
+  const labels = useMemo(() => safeData.map(d => d.day), [safeData])
 
-  const datasets = useMemo(() => metrics.map(metric => ({
+  const datasets = useMemo(() => safeMetrics.map(metric => ({
     label: metricLabels[metric] || metric,
-    data: data.map(d => d[metric]),
+    data: safeData.map(d => d[metric]),
     borderColor: colors[metric]?.line || '#3b82f6',
     backgroundColor: colors[metric]?.bg || 'rgba(59,130,246,0.08)',
     fill: true,
@@ -96,7 +98,7 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
     pointHoverRadius: 6,
     pointBackgroundColor: colors[metric]?.line || '#3b82f6',
     borderWidth: 2,
-  })), [data, metrics])
+  })), [safeData, safeMetrics])
 
   const chartData = useMemo(() => ({ labels, datasets }), [labels, datasets])
 
@@ -106,7 +108,7 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
       ...baseOptions.plugins,
       legend: {
         ...baseOptions.plugins.legend,
-        display: metrics.length > 1,
+        display: safeMetrics.length > 1,
         labels: {
           ...baseOptions.plugins.legend.labels,
           color: darkMode ? '#94a3b8' : '#64748b',
@@ -127,8 +129,8 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
         ticks: {
           color: darkMode ? '#94a3b8' : '#64748b',
           font: { size: 11 },
-          maxTicksLimit: data.length > 14 ? 10 : undefined,
-          maxRotation: data.length > 14 ? 45 : 0,
+          maxTicksLimit: safeData.length > 14 ? 10 : undefined,
+          maxRotation: safeData.length > 14 ? 45 : 0,
         },
       },
       y: {
@@ -137,7 +139,7 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
         ticks: { color: darkMode ? '#94a3b8' : '#64748b', font: { size: 11 } },
       },
     },
-  }), [darkMode, metrics.length, data.length])
+  }), [darkMode, safeMetrics.length, safeData.length])
 
   return (
     <div className="glass-card p-6">
