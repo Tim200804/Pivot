@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.9",
     "chart.js": "^4.4.3",
     "framer-motion": "^11.3.0",
     "isomorphic-git": "^1.38.10",

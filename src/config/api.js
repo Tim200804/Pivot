@@ -282,9 +282,11 @@ export async function apiListCoaches() {
 
 /* ─── Check-ins API ─── */
 
-export async function apiListCheckins({ limit = 90 } = {}) {
+export async function apiListCheckins({ limit = 30, offset = 0, fields = 'light' } = {}) {
   const params = new URLSearchParams()
   if (limit) params.set('limit', String(limit))
+  if (offset) params.set('offset', String(offset))
+  if (fields) params.set('fields', fields)
   const qs = params.toString()
   return apiFetch(`/api/checkins${qs ? `?${qs}` : ''}`, { method: 'GET' })
 }

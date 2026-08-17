@@ -7,6 +7,7 @@ import TrainingImpactChart from '../ui/TrainingImpactChart'
 import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { isMockMode, apiGetHealthMetrics, apiGetTrainingMetrics, apiGetTrainingCorrelation, apiGetTrainingSuggestion } from '../../config/api'
+import { ATHLETES } from '../../data/mockData'
 
 const RANGE_OPTIONS = [
   { value: '7d', label: '7 Days' },
@@ -134,7 +135,18 @@ export default function AthleteTrends() {
   const [loading, setLoading] = useState(!isMockMode())
 
   useEffect(() => {
-    if (isMockMode() || !user?.id) return
+    if (isMockMode()) {
+      const displayName = user?.name || 'Morgan Smith'
+      const mockAthlete = ATHLETES.find(a => a.name === displayName) || ATHLETES.find(a => a.name === 'Morgan Smith') || ATHLETES[0]
+      setHealthRows(mockAthlete.health || [])
+      setTrainingRows(mockAthlete.training || [])
+      setCorrelation({ loadVsHrv: -0.72, loadVsRhr: 0.68, loadVsSleep: 0.55 })
+      setSuggestion({ text: 'Reduce volume by 20% for 2 days; prioritize sleep before next high-intensity session.', actions: ['Drop second practice', 'Target 8+ hrs sleep', 'Light mobility only'] })
+      setSuggestionLoading(false)
+      setLoading(false)
+      return
+    }
+    if (!user?.id) return
     let cancelled = false
     setLoading(true)
     Promise.all([

@@ -17,6 +17,7 @@ import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
 import { useMoodColors } from '../../context/MoodColorContext'
 import { isMockMode, apiGetAthleteDashboard, apiSubmitCheckin } from '../../config/api'
+import { ATHLETES } from '../../data/mockData'
 import { getLowPeriodSupport } from '../../utils/aiCoach'
 
 function computeHrvTrend(health) {
@@ -99,7 +100,23 @@ export default function AthleteDashboard() {
   }, [])
 
   const athlete = useMemo(() => {
-    if (isMockMode()) return null
+    if (isMockMode()) {
+      // Match mock athlete by name or fall back to Morgan Smith (red alert demo)
+      const displayName = user?.name || 'Morgan Smith'
+      const mockAthlete = ATHLETES.find(a => a.name === displayName) || ATHLETES.find(a => a.name === 'Morgan Smith') || ATHLETES[0]
+      return {
+        ...mockAthlete,
+        team: mockAthlete.team || mockAthlete.teamName || '',
+        health: mockAthlete.health || [],
+        training: mockAthlete.training || [],
+        checkins: mockAthlete.checkins || [],
+        status: mockAthlete.status || 'good',
+        hrvTrend: computeHrvTrend(mockAthlete.health || []),
+        currentHRV: mockAthlete.currentHRV ?? (mockAthlete.health?.[mockAthlete.health.length - 1]?.hrv || '-'),
+        currentRHR: mockAthlete.currentRHR ?? (mockAthlete.health?.[mockAthlete.health.length - 1]?.rhr || '-'),
+        currentSleep: mockAthlete.currentSleep ?? (mockAthlete.health?.[mockAthlete.health.length - 1]?.sleepHours || '-'),
+      }
+    }
     if (!dashboard) return null
     // Backend returns newest-first; UI expects oldest-first (Mon->Sun)
     const health = [...(dashboard.health || [])].reverse()
@@ -118,7 +135,7 @@ export default function AthleteDashboard() {
       currentRHR: summary.rhr ?? (health[health.length - 1]?.rhr || '-'),
       currentSleep: summary.sleepHours ?? (health[health.length - 1]?.sleepHours || '-'),
     }
-  }, [dashboard])
+  }, [dashboard, user])
 
   const latestHealth = useMemo(() => athlete?.health?.[athlete.health.length - 1] || {}, [athlete])
   const latestCheckin = useMemo(() => athlete?.checkins?.[athlete.checkins.length - 1] || { mood: 3, motivation: 5, fatigue: 5, journal: '' }, [athlete])
@@ -481,7 +498,7 @@ export default function AthleteDashboard() {
                   value={latestHealth.rhr}
                   unit="bpm"
                   trend={latestHealth.rhr > (athlete.health[athlete.health.length - 2]?.rhr || latestHealth.rhr) ? 'up' : 'down'}
-                  trendValue={Math.abs(latestHealth.rhr - (athlete.health[athlete.health.length - 2]?.rhr || latestHealth.rhr))}
+                  trendValue={Math.abs(latestHealth.rhr - (athlete.health[athlete.health.length - 2]?.rhr || latestHealth.rhr)).toFixed(5)}
                   color="rose"
                   onClick={() => trendsRef.current?.scrollIntoView({ behavior: 'smooth' })}
                 />
