@@ -34,6 +34,7 @@ export function AlertProvider({ children }) {
   const [realAthletes, setRealAthletes] = useState([])
   const [nudges, setNudges] = useState([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const refreshAlerts = useCallback(async () => {
     if (isMockMode()) return
@@ -67,11 +68,18 @@ export function AlertProvider({ children }) {
     let cancelled = false
     async function load() {
       if (!user?.id) return
+      setLoading(true)
+      setError(null)
       try {
         const athletesData = await apiListAthletes()
         if (!cancelled) setRealAthletes(athletesData?.athletes || [])
-      } catch {
-        if (!cancelled) setRealAthletes([])
+      } catch (err) {
+        if (!cancelled) {
+          setRealAthletes([])
+          setError(err.message || 'Failed to load athletes')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
       if (!cancelled) await refreshAlerts()
     }
@@ -151,6 +159,7 @@ export function AlertProvider({ children }) {
     alertCount,
     athletes,
     loading,
+    error,
     refreshAlerts,
     dismissAlert,
     actionAlert,

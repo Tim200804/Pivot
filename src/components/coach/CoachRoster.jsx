@@ -28,7 +28,7 @@ function Toast({ message, visible }) {
 export default function CoachRoster() {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
-  const { athletes, alerts } = useAlerts()
+  const { athletes, alerts, loading, error } = useAlerts()
   const [selectedAthlete, setSelectedAthlete] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState('grid')
@@ -98,7 +98,7 @@ export default function CoachRoster() {
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-pivot-900 dark:text-white tracking-tight">Athlete Roster</h2>
               <p className="text-sm text-pivot-500 dark:text-slate-400 mt-1">
-                {athletes.length} athletes across 2 schools
+                {loading ? 'Loading athletes...' : `${athletes.length} athletes across 2 schools`}
                 {selectedIds.size > 0 && <span className="text-accent-teal font-medium"> · {selectedIds.size} selected</span>}
               </p>
             </div>
@@ -164,7 +164,39 @@ export default function CoachRoster() {
             )}
           </AnimatePresence>
 
+          {/* Loading State */}
+          {loading && (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <div className="w-8 h-8 border-2 border-accent-teal border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-pivot-400 dark:text-slate-400">Loading roster...</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !loading && (
+            <div className="glass-card p-8 text-center">
+              <p className="text-rose-500 font-medium mb-2">Failed to load roster</p>
+              <p className="text-sm text-pivot-400 dark:text-slate-400 mb-4">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded-xl bg-accent-teal text-white text-sm hover:bg-accent-teal/90 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loading && !error && athletes.length === 0 && (
+            <div className="glass-card p-8 text-center">
+              <Users size={40} className="mx-auto text-pivot-300 dark:text-slate-600 mb-3" />
+              <p className="text-pivot-700 dark:text-white font-medium mb-1">No athletes found</p>
+              <p className="text-sm text-pivot-400 dark:text-slate-400">Your roster is empty. Add athletes to get started.</p>
+            </div>
+          )}
+
           {/* Roster Grid/List */}
+          {!loading && !error && athletes.length > 0 && (
           <div className={viewMode === 'grid'
             ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'
             : 'space-y-2'
@@ -244,6 +276,7 @@ export default function CoachRoster() {
               </motion.div>
             ))}
           </div>
+          )}
 
           <div className="h-4" />
         </main>
