@@ -92,7 +92,7 @@ export default function CoachDashboard() {
 
   // Fetch real team summary from backend
   useEffect(() => {
-    if (isMockMode() || !user?.id) return
+    if (isMockMode() || !user?.id || user.role !== 'coach') return
     let cancelled = false
     apiGetTeamSummary()
       .then(data => {

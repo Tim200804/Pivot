@@ -203,7 +203,7 @@ export default function CoachRoster() {
                         athlete.status === 'warning' ? 'text-amber-500' :
                         'text-emerald-500'
                       }`}>
-                        {athlete.name.split(' ').map(n => n[0]).join('')}
+                        {athlete.name?.split(' ').map(n => n[0]).join('') || '?'}
                       </span>
                     </div>
 
@@ -279,7 +279,7 @@ export default function CoachRoster() {
                       selectedAthlete.status === 'warning' ? 'text-amber-500' :
                       'text-emerald-500'
                     }`}>
-                      {selectedAthlete.name.split(' ').map(n => n[0]).join('')}
+                      {selectedAthlete.name?.split(' ').map(n => n[0]).join('') || '?'}
                     </span>
                   </div>
                   <div>

@@ -11,6 +11,27 @@ import { useUser } from './UserContext'
 
 const AlertContext = createContext()
 
+function normalizeRosterAthlete(a) {
+  if (!a) return null
+  const health = Array.isArray(a.health) ? a.health : []
+  return {
+    ...a,
+    name: a.name || 'Athlete',
+    school: a.school || '',
+    team: a.team || a.teamName || '',
+    teamName: a.teamName || a.team || '',
+    position: a.position || '',
+    height: a.height ?? '—',
+    weight: a.weight ?? '—',
+    age: a.age ?? '—',
+    status: a.status || 'unknown',
+    currentHRV: a.currentHRV ?? a.hrv ?? 0,
+    currentRHR: a.currentRHR ?? a.rhr ?? 0,
+    currentSleep: a.currentSleep ?? a.sleepHours ?? 0,
+    health,
+  }
+}
+
 function formatRelativeTime(isoString) {
   if (!isoString) return ''
   const date = new Date(isoString)
@@ -29,7 +50,7 @@ function formatRelativeTime(isoString) {
 }
 
 export function AlertProvider({ children }) {
-  const { user } = useUser()
+  const { user, authRestored } = useUser()
   const [alerts, setAlerts] = useState(ALERTS)
   const [realAthletes, setRealAthletes] = useState([])
   const [nudges, setNudges] = useState([])
@@ -61,23 +82,35 @@ export function AlertProvider({ children }) {
     }
   }, [user?.id, user?.role])
 
-  // In real mode, load the actual athlete roster and real alerts from the backend.
+  // In real mode, load roster (coach only) and alerts once auth is restored.
   useEffect(() => {
-    if (isMockMode()) return
+    if (isMockMode() || !authRestored) return
     let cancelled = false
     async function load() {
-      if (!user?.id) return
-      try {
-        const athletesData = await apiListAthletes()
-        if (!cancelled) setRealAthletes(athletesData?.athletes || [])
-      } catch {
-        if (!cancelled) setRealAthletes([])
+      if (!user?.id) {
+        if (!cancelled) {
+          setRealAthletes([])
+          setAlerts([])
+        }
+        return
+      }
+      if (user.role === 'coach') {
+        try {
+          const athletesData = await apiListAthletes()
+          if (!cancelled) {
+            setRealAthletes((athletesData?.athletes || []).map(normalizeRosterAthlete))
+          }
+        } catch {
+          if (!cancelled) setRealAthletes([])
+        }
+      } else if (!cancelled) {
+        setRealAthletes([])
       }
       if (!cancelled) await refreshAlerts()
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, refreshAlerts])
+  }, [user?.id, user?.role, authRestored, refreshAlerts])
 
   const totalAlerts = alerts.length
   const alertCount = useMemo(() => ({

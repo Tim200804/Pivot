@@ -83,11 +83,14 @@ const baseOptions = {
 }
 
 const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, darkMode }) {
-  const labels = useMemo(() => data.map(d => d.day), [data])
+  const safeData = Array.isArray(data) ? data : []
+  const safeMetrics = Array.isArray(metrics) ? metrics : ['hrv']
 
-  const datasets = useMemo(() => metrics.map(metric => ({
+  const labels = useMemo(() => safeData.map(d => d?.day ?? d?.date ?? ''), [safeData])
+
+  const datasets = useMemo(() => safeMetrics.map(metric => ({
     label: metricLabels[metric] || metric,
-    data: data.map(d => d[metric]),
+    data: safeData.map(d => d?.[metric] ?? null),
     borderColor: colors[metric]?.line || '#3b82f6',
     backgroundColor: colors[metric]?.bg || 'rgba(59,130,246,0.08)',
     fill: true,
@@ -96,7 +99,7 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
     pointHoverRadius: 6,
     pointBackgroundColor: colors[metric]?.line || '#3b82f6',
     borderWidth: 2,
-  })), [data, metrics])
+  })), [safeData, safeMetrics])
 
   const chartData = useMemo(() => ({ labels, datasets }), [labels, datasets])
 
@@ -106,7 +109,7 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
       ...baseOptions.plugins,
       legend: {
         ...baseOptions.plugins.legend,
-        display: metrics.length > 1,
+        display: safeMetrics.length > 1,
         labels: {
           ...baseOptions.plugins.legend.labels,
           color: darkMode ? '#94a3b8' : '#64748b',
@@ -127,8 +130,8 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
         ticks: {
           color: darkMode ? '#94a3b8' : '#64748b',
           font: { size: 11 },
-          maxTicksLimit: data.length > 14 ? 10 : undefined,
-          maxRotation: data.length > 14 ? 45 : 0,
+          maxTicksLimit: safeData.length > 14 ? 10 : undefined,
+          maxRotation: safeData.length > 14 ? 45 : 0,
         },
       },
       y: {
@@ -137,7 +140,18 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
         ticks: { color: darkMode ? '#94a3b8' : '#64748b', font: { size: 11 } },
       },
     },
-  }), [darkMode, metrics.length, data.length])
+  }), [darkMode, safeMetrics.length, safeData.length])
+
+  if (!safeData.length) {
+    return (
+      <div className="glass-card p-6">
+        {title && (
+          <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300 mb-4">{title}</h3>
+        )}
+        <p className="text-sm text-pivot-400 dark:text-slate-500 py-8 text-center">No health data available yet.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="glass-card p-6">
