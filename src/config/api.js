@@ -198,6 +198,13 @@ export async function apiUpdatePreferences(preferences) {
   })
 }
 
+export async function apiUpdateProfile(profile) {
+  return apiFetch('/api/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify(profile),
+  })
+}
+
 export async function apiCheckEmail(email) {
   return apiFetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`, { method: 'GET' })
 }

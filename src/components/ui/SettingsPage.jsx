@@ -7,7 +7,7 @@ import { useUser } from '../../context/UserContext'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { isMockMode } from '../../config/api.js'
-import { apiUpdatePreferences } from '../../config/api.js'
+import { apiUpdatePreferences, apiUpdateProfile } from '../../config/api.js'
 
 function Toast({ message, visible }) {
   return (
@@ -48,16 +48,34 @@ export default function SettingsPage({ role }) {
     height: user?.height || '',
     weight: user?.weight || '',
   })
+  const [profileSaving, setProfileSaving] = useState(false)
 
   const showToast = (msg) => {
     setToast({ visible: true, message: msg })
     setTimeout(() => setToast({ visible: false, message: '' }), 2500)
   }
 
-  const handleSaveProfile = () => {
-    login({ ...user, ...editForm }, true)
-    setEditing(false)
-    showToast('Profile updated and saved!')
+  const handleSaveProfile = async () => {
+    if (isMockMode()) {
+      login({ ...user, ...editForm }, true)
+      setEditing(false)
+      showToast('Profile updated and saved!')
+      return
+    }
+
+    setProfileSaving(true)
+    try {
+      const data = await apiUpdateProfile(editForm)
+      if (data?.user) {
+        setUser({ ...user, ...data.user })
+      }
+      setEditing(false)
+      showToast('Profile updated and saved!')
+    } catch {
+      showToast('Failed to update profile')
+    } finally {
+      setProfileSaving(false)
+    }
   }
 
   const handleCancelEdit = () => {

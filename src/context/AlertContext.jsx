@@ -3,7 +3,6 @@ import { ATHLETES, ALERTS } from '../data/mockData'
 import {
   isMockMode,
   apiListAthletes,
-  apiGetTeamSummary,
   apiGetCoachAlerts,
   apiGetAthleteAlerts,
   apiUpdateAlertStatus,
@@ -11,6 +10,27 @@ import {
 import { useUser } from './UserContext'
 
 const AlertContext = createContext()
+
+function normalizeRosterAthlete(a) {
+  if (!a) return null
+  const health = Array.isArray(a.health) ? a.health : []
+  return {
+    ...a,
+    name: a.name || 'Athlete',
+    school: a.school || '',
+    team: a.team || a.teamName || '',
+    teamName: a.teamName || a.team || '',
+    position: a.position || '',
+    height: a.height ?? '—',
+    weight: a.weight ?? '—',
+    age: a.age ?? '—',
+    status: a.status || 'unknown',
+    currentHRV: a.currentHRV ?? a.hrv ?? 0,
+    currentRHR: a.currentRHR ?? a.rhr ?? 0,
+    currentSleep: a.currentSleep ?? a.sleepHours ?? 0,
+    health,
+  }
+}
 
 function formatRelativeTime(isoString) {
   if (!isoString) return ''
@@ -30,7 +50,7 @@ function formatRelativeTime(isoString) {
 }
 
 export function AlertProvider({ children }) {
-  const { user } = useUser()
+  const { user, authRestored } = useUser()
   const [alerts, setAlerts] = useState(ALERTS)
   const [realAthletes, setRealAthletes] = useState([])
   const [nudges, setNudges] = useState([])
@@ -63,31 +83,24 @@ export function AlertProvider({ children }) {
     }
   }, [user?.id, user?.role])
 
-  // In real mode, load the actual athlete roster and real alerts from the backend.
-  // Coaches get full team summary (metrics included); athletes fall back to lightweight list.
+  // In real mode, load the actual athlete roster and real alerts once auth is restored.
   useEffect(() => {
-    if (isMockMode()) return
+    if (isMockMode() || !authRestored) return
     let cancelled = false
     async function load() {
-      if (!user?.id) return
+      if (!user?.id) {
+        if (!cancelled) {
+          setRealAthletes([])
+          setAlerts([])
+        }
+        return
+      }
       setLoading(true)
       setError(null)
       try {
-        if (user.role === 'coach') {
-          const summaryData = await apiGetTeamSummary()
-          const rawAthletes = summaryData?.summary?.athletes || []
-          // Normalize backend field names to the shape the UI expects
-          const normalized = rawAthletes.map(a => ({
-            ...a,
-            team: a.team || a.team_name || '',
-            currentHRV: a.currentHRV ?? a.hrv ?? '-',
-            currentRHR: a.currentRHR ?? a.rhr ?? '-',
-            currentSleep: a.currentSleep ?? a.sleepHours ?? '-',
-          }))
-          if (!cancelled) setRealAthletes(normalized)
-        } else {
-          const athletesData = await apiListAthletes()
-          if (!cancelled) setRealAthletes(athletesData?.athletes || [])
+        const athletesData = await apiListAthletes()
+        if (!cancelled) {
+          setRealAthletes((athletesData?.athletes || []).map(normalizeRosterAthlete))
         }
       } catch (err) {
         if (!cancelled) {
@@ -101,7 +114,7 @@ export function AlertProvider({ children }) {
     }
     load()
     return () => { cancelled = true }
-  }, [user?.id, user?.role, refreshAlerts])
+  }, [user?.id, user?.role, authRestored, refreshAlerts])
 
   const totalAlerts = alerts.length
   const alertCount = useMemo(() => ({

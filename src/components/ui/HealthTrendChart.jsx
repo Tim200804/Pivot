@@ -84,12 +84,13 @@ const baseOptions = {
 
 const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, darkMode }) {
   const safeData = Array.isArray(data) ? data : []
-  const safeMetrics = Array.isArray(metrics) ? metrics : []
-  const labels = useMemo(() => safeData.map(d => d.day), [safeData])
+  const safeMetrics = Array.isArray(metrics) ? metrics : ['hrv']
+
+  const labels = useMemo(() => safeData.map(d => d?.day ?? d?.date ?? ''), [safeData])
 
   const datasets = useMemo(() => safeMetrics.map(metric => ({
     label: metricLabels[metric] || metric,
-    data: safeData.map(d => d[metric]),
+    data: safeData.map(d => d?.[metric] ?? null),
     borderColor: colors[metric]?.line || '#3b82f6',
     backgroundColor: colors[metric]?.bg || 'rgba(59,130,246,0.08)',
     fill: true,
@@ -140,6 +141,17 @@ const HealthTrendChart = memo(function HealthTrendChart({ data, title, metrics, 
       },
     },
   }), [darkMode, safeMetrics.length, safeData.length])
+
+  if (!safeData.length) {
+    return (
+      <div className="glass-card p-6">
+        {title && (
+          <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300 mb-4">{title}</h3>
+        )}
+        <p className="text-sm text-pivot-400 dark:text-slate-500 py-8 text-center">No health data available yet.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="glass-card p-6">

@@ -28,8 +28,7 @@ export default function LoginPage() {
 
   const handlePickRole = (r) => {
     setRole(r)
-    const hasSaved = savedProfiles.some(p => p.role === r)
-    setStage(hasSaved ? 'signin' : 'signup')
+    setStage('signin')
   }
 
   const handleBackToRole = () => {
