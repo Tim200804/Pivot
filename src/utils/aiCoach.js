@@ -148,7 +148,7 @@ function avgSleep(athlete) {
  * Fallback insights when API is not available.
  * Deterministic: picks sentences from athlete data + mood + journal.
  */
-function getFallbackInsight(athlete, checkin) {
+export function getFallbackInsight(athlete, checkin) {
   const firstName = athlete.name.split(' ')[0]
   const hrv = computeTrend(athlete.health, 'hrv')
   const sleep = computeTrend(athlete.health, 'sleepHours')

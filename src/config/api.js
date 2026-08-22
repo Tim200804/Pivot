@@ -338,8 +338,11 @@ export async function apiGetTeamSummary() {
   return apiFetch('/api/health/team-summary', { method: 'GET' })
 }
 
-export async function apiGetAthleteDashboard() {
-  return apiFetch('/api/health/dashboard', { method: 'GET' })
+export async function apiGetAthleteDashboard({ days = 7 } = {}) {
+  const params = new URLSearchParams()
+  if (days) params.set('days', String(days))
+  const qs = params.toString()
+  return apiFetch(`/api/health/dashboard${qs ? `?${qs}` : ''}`, { method: 'GET' })
 }
 
 export async function apiGetTrainingImpact(userId, date) {

@@ -15,21 +15,10 @@ import AICoachInsight from '../ui/AICoachInsight'
 import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
+import { useAthleteData } from '../../context/AthleteDataContext'
 import { useMoodColors } from '../../context/MoodColorContext'
-import { isMockMode, apiGetAthleteDashboard, apiSubmitCheckin } from '../../config/api'
-import { ATHLETES } from '../../data/mockData'
+import { isMockMode, apiSubmitCheckin } from '../../config/api'
 import { getLowPeriodSupport } from '../../utils/aiCoach'
-
-function computeHrvTrend(health) {
-  if (!health || health.length < 2) return 'stable'
-  const first = health[0].hrv
-  const last = health[health.length - 1].hrv
-  const changePct = first !== 0 ? ((last - first) / first) * 100 : 0
-  if (changePct < -10) return 'severe_decline'
-  if (changePct < -5) return 'declining'
-  if (changePct > 5) return 'improving'
-  return 'stable'
-}
 
 const Toast = memo(function Toast({ message, visible }) {
   return (
@@ -53,14 +42,12 @@ export default function AthleteDashboard() {
   const { theme } = useTheme()
   const { user } = useUser()
   const { palette } = useMoodColors()
+  const { athlete, todayCheckin, bootstrapLoading, bootstrapReady, refreshAfterCheckin } = useAthleteData()
   const navigate = useNavigate()
   const isDark = theme === 'dark'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showCheckin, setShowCheckin] = useState(false)
   const [toast, setToast] = useState({ visible: false, message: '' })
-  const [loading, setLoading] = useState(!isMockMode())
-  const [error, setError] = useState(null)
-  const [dashboard, setDashboard] = useState(null)
   const trendsRef = useRef(null)
   const checkinRef = useRef(null)
 
@@ -74,71 +61,18 @@ export default function AthleteDashboard() {
     return () => { document.body.style.overflow = '' }
   }, [mobileMenuOpen])
 
-  // Load real athlete dashboard from backend
-  useEffect(() => {
-    if (isMockMode()) return
-    let cancelled = false
-    setLoading(true)
-    apiGetAthleteDashboard()
-      .then(data => {
-        if (cancelled) return
-        if (data?.success) {
-          setDashboard(data)
-          setError(null)
-        } else {
-          setError(data?.message || 'Failed to load dashboard')
-        }
-      })
-      .catch(err => {
-        if (cancelled) return
-        setError(err?.message || 'Network error')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [])
-
-  const athlete = useMemo(() => {
-    if (isMockMode()) {
-      // Match mock athlete by name or fall back to Morgan Smith (red alert demo)
-      const displayName = user?.name || 'Morgan Smith'
-      const mockAthlete = ATHLETES.find(a => a.name === displayName) || ATHLETES.find(a => a.name === 'Morgan Smith') || ATHLETES[0]
+  const latestHealth = useMemo(() => athlete?.health?.[athlete.health.length - 1] || {}, [athlete])
+  const latestCheckin = useMemo(() => {
+    if (todayCheckin) {
       return {
-        ...mockAthlete,
-        team: mockAthlete.team || mockAthlete.teamName || '',
-        health: mockAthlete.health || [],
-        training: mockAthlete.training || [],
-        checkins: mockAthlete.checkins || [],
-        status: mockAthlete.status || 'good',
-        hrvTrend: computeHrvTrend(mockAthlete.health || []),
-        currentHRV: mockAthlete.currentHRV ?? (mockAthlete.health?.[mockAthlete.health.length - 1]?.hrv || '-'),
-        currentRHR: mockAthlete.currentRHR ?? (mockAthlete.health?.[mockAthlete.health.length - 1]?.rhr || '-'),
-        currentSleep: mockAthlete.currentSleep ?? (mockAthlete.health?.[mockAthlete.health.length - 1]?.sleepHours || '-'),
+        mood: todayCheckin.mood ?? 3,
+        motivation: todayCheckin.motivation ?? 5,
+        fatigue: todayCheckin.fatigue ?? 5,
+        journal: todayCheckin.journal || '',
       }
     }
-    if (!dashboard) return null
-    // Backend returns newest-first; UI expects oldest-first (Mon->Sun)
-    const health = [...(dashboard.health || [])].reverse()
-    const training = [...(dashboard.training || [])].reverse()
-    const checkins = [...(dashboard.checkins || [])].reverse()
-    const summary = dashboard.summary || {}
-    return {
-      ...dashboard.athlete,
-      team: dashboard.athlete?.teamName || dashboard.athlete?.team || '',
-      health,
-      training,
-      checkins,
-      status: summary.status || 'good',
-      hrvTrend: computeHrvTrend(health),
-      currentHRV: summary.hrv ?? (health[health.length - 1]?.hrv || '-'),
-      currentRHR: summary.rhr ?? (health[health.length - 1]?.rhr || '-'),
-      currentSleep: summary.sleepHours ?? (health[health.length - 1]?.sleepHours || '-'),
-    }
-  }, [dashboard, user])
-
-  const latestHealth = useMemo(() => athlete?.health?.[athlete.health.length - 1] || {}, [athlete])
-  const latestCheckin = useMemo(() => athlete?.checkins?.[athlete.checkins.length - 1] || { mood: 3, motivation: 5, fatigue: 5, journal: '' }, [athlete])
+    return athlete?.checkins?.[athlete.checkins.length - 1] || { mood: 3, motivation: 5, fatigue: 5, journal: '' }
+  }, [athlete, todayCheckin])
   const { alerts, totalAlerts, activeNudgesForAthlete, respondToNudge } = useAlerts()
   const myAlerts = useMemo(() => alerts.filter(a => a.athleteId === athlete?.id), [alerts, athlete?.id])
   const pendingNudges = useMemo(() => athlete ? activeNudgesForAthlete(athlete.id) : [], [activeNudgesForAthlete, athlete])
@@ -194,9 +128,7 @@ export default function AthleteDashboard() {
     })
     try {
       await apiSubmitCheckin(checkinForm)
-      // Refresh dashboard to show the new check-in
-      const refreshed = await apiGetAthleteDashboard()
-      if (refreshed?.success) setDashboard(refreshed)
+      await refreshAfterCheckin()
       const nudgeCount = pendingNudges.length
       if (nudgeCount > 0) {
         showToast(`Check-in saved! Your coach received your response to ${nudgeCount} nudge${nudgeCount > 1 ? 's' : ''}.`)
@@ -206,7 +138,7 @@ export default function AthleteDashboard() {
     } catch (err) {
       showToast(err?.message || 'Failed to save check-in')
     }
-  }, [pendingNudges, respondToNudge, checkinForm, showToast, athlete])
+  }, [pendingNudges, respondToNudge, checkinForm, showToast, athlete, refreshAfterCheckin])
 
   const morningSummary = useMemo(() => {
     if (!athlete || !athlete.health || athlete.health.length < 2) {
@@ -221,6 +153,9 @@ export default function AthleteDashboard() {
     const hrvTrend = prev.hrv < curr.hrv ? 'up' : 'down'
     return `Last night you slept ${latestHealth.sleepHours || '-'} hours. Your HRV is ${hrvTrend} ${hrvChange}% from yesterday. Recovery status: ${athlete.hrvTrend === 'improving' ? 'improving' : 'needs attention'}.`
   }, [athlete, latestHealth])
+
+  const loading = !isMockMode() && bootstrapLoading && !bootstrapReady
+  const error = !isMockMode() && bootstrapReady && !athlete ? 'Unable to load dashboard' : null
 
   if (loading) {
     return (
@@ -463,7 +398,7 @@ export default function AthleteDashboard() {
           </motion.div>
 
           {/* AI Coach Insight */}
-          <AICoachInsight athlete={athlete} checkin={checkinForm} />
+          <AICoachInsight athlete={athlete} checkin={checkinForm} deferInitialInsight />
 
           {/* Health Metrics Grid */}
           <div>

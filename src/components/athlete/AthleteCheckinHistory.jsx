@@ -4,8 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { ClipboardCheck, Calendar, TrendingDown, Smile, Frown, Meh, Zap, BatteryLow, Loader2 } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import { isMockMode, apiListCheckins } from '../../config/api'
-import { ATHLETES } from '../../data/mockData'
-import { useUser } from '../../context/UserContext'
+import { useAthleteData } from '../../context/AthleteDataContext'
 
 function getMoodIcon(mood) {
   if (mood >= 4) return Smile
@@ -143,13 +142,26 @@ function CheckinRow({ checkin, isExpanded, onToggle }) {
 }
 
 export default function AthleteCheckinHistory() {
-  const { user } = useUser()
+  const { checkins: cachedCheckins, bootstrapReady, bootstrap } = useAthleteData()
   const [expandedId, setExpandedId] = useState(null)
   const [checkins, setCheckins] = useState([])
-  const [loading, setLoading] = useState(!isMockMode())
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const parentRef = useRef(null)
+
+  useEffect(() => {
+    if (cachedCheckins.length > 0) {
+      setCheckins(cachedCheckins)
+      setHasMore(cachedCheckins.length >= 30)
+    }
+  }, [cachedCheckins])
+
+  useEffect(() => {
+    if (isMockMode() || bootstrapReady) return
+    bootstrap()
+  }, [bootstrap, bootstrapReady])
+
+  const loading = !isMockMode() && !bootstrapReady && checkins.length === 0
 
   const rowVirtualizer = useVirtualizer({
     count: checkins.length,
@@ -158,36 +170,6 @@ export default function AthleteCheckinHistory() {
     measureElement: (el) => el.getBoundingClientRect().height,
     overscan: 6,
   })
-
-  useEffect(() => {
-    if (isMockMode()) {
-      const displayName = user?.name || 'Morgan Smith'
-      const mockAthlete = ATHLETES.find(a => a.name === displayName) || ATHLETES.find(a => a.name === 'Morgan Smith') || ATHLETES[0]
-      setCheckins(mockAthlete.checkins || [])
-      setLoading(false)
-      return
-    }
-
-    let cancelled = false
-    setLoading(true)
-    apiListCheckins({ limit: 30, offset: 0 })
-      .then(data => {
-        if (cancelled) return
-        const rows = (data?.checkins || []).map(c => ({
-          ...c,
-          day: c.date || c.day,
-        }))
-        setCheckins(rows)
-        setHasMore(rows.length === 30)
-      })
-      .catch(() => {
-        if (!cancelled) setCheckins([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [])
 
   const loadMore = async () => {
     if (loadingMore || !hasMore || isMockMode()) return

@@ -98,9 +98,13 @@ export function AlertProvider({ children }) {
       setLoading(true)
       setError(null)
       try {
-        const athletesData = await apiListAthletes()
-        if (!cancelled) {
-          setRealAthletes((athletesData?.athletes || []).map(normalizeRosterAthlete))
+        if (user.role === 'coach') {
+          const athletesData = await apiListAthletes()
+          if (!cancelled) {
+            setRealAthletes((athletesData?.athletes || []).map(normalizeRosterAthlete))
+          }
+        } else if (!cancelled) {
+          setRealAthletes([])
         }
       } catch (err) {
         if (!cancelled) {
