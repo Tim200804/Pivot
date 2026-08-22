@@ -5,6 +5,7 @@ import {
   CheckCircle2, XCircle, Clock, Users, MessageSquare,
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
+import Sidebar from '../ui/Sidebar'
 import {
   apiListSubstitutionRequests,
   apiListSubstitutionCandidates,
@@ -94,20 +95,23 @@ export default function AthleteSubstitutionPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-surface-light dark:bg-surface-dark p-4 md:p-6">
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-pivot-900 dark:text-white">Leave & Substitution</h1>
-          <p className="text-sm text-pivot-500 dark:text-slate-400">
-            Request a teammate to cover your position when you need to miss training.
-          </p>
-        </div>
+    <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
+      <Sidebar role="athlete" />
+      <div className="flex-1 flex flex-col min-h-[100dvh] overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-pivot-900 dark:text-white">Leave & Substitution</h1>
+              <p className="text-sm text-pivot-500 dark:text-slate-400">
+                Request a teammate to cover your position when you need to miss training.
+              </p>
+            </div>
 
-        <div className="flex gap-2 mb-6">
-          {[
-            { key: 'request', label: 'Request Substitution' },
-            { key: 'list', label: `My Requests ${myRequests.length > 0 ? `(${myRequests.length})` : ''}` },
-          ].map(t => (
+            <div className="flex gap-2 mb-6">
+              {[
+                { key: 'request', label: 'Request Substitution' },
+                { key: 'list', label: `My Requests ${myRequests.length > 0 ? `(${myRequests.length})` : ''}` },
+              ].map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -343,6 +347,8 @@ export default function AthleteSubstitutionPage() {
             </motion.div>
           )}
         </AnimatePresence>
+          </div>
+        </main>
       </div>
     </div>
   )

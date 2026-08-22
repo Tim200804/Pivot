@@ -5,6 +5,7 @@ import {
   Calendar, UserCheck, UserX, MessageCircle, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
+import Sidebar from '../ui/Sidebar'
 import {
   apiListSubstitutionRequests,
   apiListAthletes,
@@ -133,16 +134,19 @@ export default function CoachSubstitutionPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-surface-light dark:bg-surface-dark p-4 md:p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-pivot-900 dark:text-white">Substitution Requests</h1>
-          <p className="text-sm text-pivot-500 dark:text-slate-400">
-            Review athlete leave requests and arrange substitutions for your roster.
-          </p>
-        </div>
+    <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
+      <Sidebar role="coach" />
+      <div className="flex-1 flex flex-col min-h-[100dvh] overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto w-full">
+          <div className="max-w-4xl mx-auto">
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-pivot-900 dark:text-white">Substitution Requests</h1>
+              <p className="text-sm text-pivot-500 dark:text-slate-400">
+                Review athlete leave requests and arrange substitutions for your roster.
+              </p>
+            </div>
 
-        <div className="flex gap-2 mb-6">
+            <div className="flex gap-2 mb-6">
           {[
             { key: 'requests', label: `Pending Requests ${requests.length > 0 ? `(${requests.length})` : ''}` },
             { key: 'initiate', label: 'Initiate Substitution' },
@@ -395,6 +399,8 @@ export default function CoachSubstitutionPage() {
             </motion.div>
           )}
         </AnimatePresence>
+          </div>
+        </main>
       </div>
     </div>
   )
