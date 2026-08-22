@@ -29,6 +29,7 @@ export default function AthleteSubstitutionPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({ trainingDate: '', reason: '', substituteId: '' })
+  const [responseNote, setResponseNote] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -87,7 +88,8 @@ export default function AthleteSubstitutionPage() {
 
   const handleRespond = async (id, accept) => {
     try {
-      await apiRespondSubstitutionRequest(id, accept)
+      await apiRespondSubstitutionRequest(id, accept, responseNote)
+      setResponseNote('')
       await load()
     } catch (err) {
       setError(err.message || 'Failed to respond')
@@ -287,6 +289,18 @@ export default function AthleteSubstitutionPage() {
                             </button>
                           </div>
                         </div>
+                        <div className="mt-3">
+                          <label className="block text-xs font-medium text-pivot-600 dark:text-slate-400 mb-1.5">
+                            Response note (optional)
+                          </label>
+                          <textarea
+                            value={responseNote}
+                            onChange={e => setResponseNote(e.target.value)}
+                            placeholder="e.g. I can cover, but I'll be 10 min late..."
+                            rows={2}
+                            className="w-full px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 resize-none focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -325,6 +339,11 @@ export default function AthleteSubstitutionPage() {
                               {req.reason && (
                                 <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
                                   Reason: {req.reason}
+                                </p>
+                              )}
+                              {req.responseNote && (
+                                <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
+                                  Teammate note: {req.responseNote}
                                 </p>
                               )}
                               {req.coachNote && (

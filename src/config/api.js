@@ -453,10 +453,10 @@ export async function apiCreateSubstitutionRequest({ trainingDate, reason, subst
   })
 }
 
-export async function apiRespondSubstitutionRequest(requestId, accept) {
+export async function apiRespondSubstitutionRequest(requestId, accept, note = '') {
   return apiFetch(`/api/substitutions/${requestId}/respond`, {
     method: 'POST',
-    body: JSON.stringify({ accept }),
+    body: JSON.stringify({ accept, note }),
   })
 }
 

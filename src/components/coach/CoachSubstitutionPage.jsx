@@ -273,6 +273,7 @@ export default function CoachSubstitutionPage() {
                             >
                               <div className="pt-3 mt-3 border-t border-pivot-100 dark:border-slate-700 text-xs text-pivot-500 dark:text-slate-400 space-y-1">
                                 <p>Reason: {req.reason || '—'}</p>
+                                {req.responseNote && <p>Teammate note: {req.responseNote}</p>}
                                 {req.coachNote && <p>Coach note: {req.coachNote}</p>}
                                 <p>Requested: {new Date(req.createdAt).toLocaleString()}</p>
                               </div>
