@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Activity, ClipboardCheck, TrendingUp,
   Bell, Settings, LogOut, ChevronLeft, ChevronRight,
-  GraduationCap
+  GraduationCap, Users,
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
@@ -16,12 +16,14 @@ const athleteLinks = [
   { path: '/athlete/checkin', icon: ClipboardCheck, label: 'Daily Check-in' },
   { path: '/athlete/trends', icon: TrendingUp, label: 'Trends' },
   { path: '/athlete/alerts', icon: Bell, label: 'Alerts' },
+  { path: '/athlete/substitution', icon: Users, label: 'Substitution' },
 ]
 
 const coachLinks = [
   { path: '/coach', icon: LayoutDashboard, label: 'Team Overview', exact: true },
   { path: '/coach/alerts', icon: Bell, label: 'Alerts' },
   { path: '/coach/roster', icon: Activity, label: 'Roster' },
+  { path: '/coach/substitution', icon: Users, label: 'Substitutions' },
 ]
 
 const Sidebar = memo(function Sidebar({ role }) {

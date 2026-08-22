@@ -431,3 +431,52 @@ export async function apiGetTrainingSuggestion(userId, { days = 14 } = {}) {
   params.set('days', String(days))
   return apiFetch(`/api/health/training-suggestion/${userId}?${params.toString()}`, { method: 'GET' })
 }
+
+/* ─── Substitution / leave request API ─── */
+
+export async function apiListSubstitutionRequests() {
+  return apiFetch('/api/substitutions', { method: 'GET' })
+}
+
+export async function apiListSubstitutionCandidates() {
+  return apiFetch('/api/substitutions/candidates', { method: 'GET' })
+}
+
+export async function apiListCoachSubstitutionCandidates(athleteId) {
+  return apiFetch(`/api/substitutions/coach-candidates?athleteId=${encodeURIComponent(athleteId)}`, { method: 'GET' })
+}
+
+export async function apiCreateSubstitutionRequest({ trainingDate, reason, substituteId }) {
+  return apiFetch('/api/substitutions', {
+    method: 'POST',
+    body: JSON.stringify({ trainingDate, reason, substituteId }),
+  })
+}
+
+export async function apiRespondSubstitutionRequest(requestId, accept) {
+  return apiFetch(`/api/substitutions/${requestId}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ accept }),
+  })
+}
+
+export async function apiCoachApproveSubstitutionRequest(requestId, approve, note) {
+  return apiFetch(`/api/substitutions/${requestId}/coach-approve`, {
+    method: 'POST',
+    body: JSON.stringify({ approve, note }),
+  })
+}
+
+export async function apiCoachInitiateSubstitution({ athleteId, substituteId, trainingDate, reason }) {
+  return apiFetch('/api/substitutions/coach-initiate', {
+    method: 'POST',
+    body: JSON.stringify({ athleteId, substituteId, trainingDate, reason }),
+  })
+}
+
+export async function apiCoachSendSubstitutionMessage({ athleteId }) {
+  return apiFetch('/api/substitutions/coach-message', {
+    method: 'POST',
+    body: JSON.stringify({ athleteId }),
+  })
+}

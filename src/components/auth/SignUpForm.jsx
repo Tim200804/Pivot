@@ -30,7 +30,6 @@ export default function SignUpForm({ role, sport, setSport }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [position, setPosition] = useState('')
-  const [showPositionPicker, setShowPositionPicker] = useState(false)
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
   const [coachRole, setCoachRole] = useState('')
@@ -49,7 +48,6 @@ export default function SignUpForm({ role, sport, setSport }) {
   const [serverSports, setServerSports] = useState(null)
 
   const schoolRef = useRef(null)
-  const positionRef = useRef(null)
   const coachRoleRef = useRef(null)
   const navigate = useNavigate()
   const { login, register, getPositionsForSport, getSchoolsForSport } = useUser()
@@ -57,7 +55,6 @@ export default function SignUpForm({ role, sport, setSport }) {
   useEffect(() => {
     const handler = (e) => {
       if (schoolRef.current && !schoolRef.current.contains(e.target)) setShowSchoolPicker(false)
-      if (positionRef.current && !positionRef.current.contains(e.target)) setShowPositionPicker(false)
       if (coachRoleRef.current && !coachRoleRef.current.contains(e.target)) setShowCoachRolePicker(false)
     }
     document.addEventListener('mousedown', handler)
@@ -301,7 +298,21 @@ export default function SignUpForm({ role, sport, setSport }) {
           </div>
         </div>
         {isAthlete ? (
-          <Picker ref={positionRef} label="Position" value={position} placeholder={sport === 'rowing' ? 'Select seat position...' : 'Select position...'} open={showPositionPicker} toggle={() => setShowPositionPicker(!showPositionPicker)} options={positions} onSelect={setPosition} accent="blue" />
+          <div>
+            <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">Position <span className="text-red-400">*</span></label>
+            <input
+              type="text"
+              list="position-suggestions"
+              value={position}
+              onChange={e => setPosition(e.target.value)}
+              placeholder={sport === 'rowing' ? 'e.g. 4 Seat' : 'e.g. Point Guard'}
+              className={glassInput}
+              required
+            />
+            <datalist id="position-suggestions">
+              {positions.map(p => <option key={p} value={p} />)}
+            </datalist>
+          </div>
         ) : (
           <Picker ref={coachRoleRef} label="Role" value={coachRole} placeholder="Select your role..." open={showCoachRolePicker} toggle={() => setShowCoachRolePicker(!showCoachRolePicker)} options={coachRoles} onSelect={setCoachRole} accent="teal" />
         )}

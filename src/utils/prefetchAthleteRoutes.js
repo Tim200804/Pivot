@@ -14,6 +14,9 @@ export function prefetchAthleteRoute(path) {
     case '/athlete/trends':
       import('../components/athlete/AthleteTrends')
       break
+    case '/athlete/substitution':
+      import('../components/athlete/AthleteSubstitutionPage')
+      break
     default:
       break
   }
@@ -21,5 +24,5 @@ export function prefetchAthleteRoute(path) {
 
 /** Prefetch all primary athlete tabs once auth is ready. */
 export function prefetchAthleteTabs() {
-  ;['/athlete', '/athlete/checkin', '/athlete/trends'].forEach(prefetchAthleteRoute)
+  ;['/athlete', '/athlete/checkin', '/athlete/trends', '/athlete/substitution'].forEach(prefetchAthleteRoute)
 }

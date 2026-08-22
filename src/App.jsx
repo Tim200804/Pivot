@@ -22,6 +22,8 @@ const AthleteTrends = lazy(() => import('./components/athlete/AthleteTrends'))
 const CoachDashboard = lazy(() => import('./components/coach/CoachDashboard'))
 const CoachAlertCenter = lazy(() => import('./components/coach/CoachAlertCenter'))
 const CoachRoster = lazy(() => import('./components/coach/CoachRoster'))
+const CoachSubstitutionPage = lazy(() => import('./components/coach/CoachSubstitutionPage'))
+const AthleteSubstitutionPage = lazy(() => import('./components/athlete/AthleteSubstitutionPage'))
 const SettingsPage = lazy(() => import('./components/ui/SettingsPage'))
 
 const pageVariants = {
@@ -85,6 +87,7 @@ function AnimatedRoutes() {
                 <Route path="/athlete/alerts" element={<AthleteAlertCenter />} />
                 <Route path="/athlete/checkin" element={<AthleteCheckinHistory />} />
                 <Route path="/athlete/trends" element={<AthleteTrends />} />
+                <Route path="/athlete/substitution" element={<AthleteSubstitutionPage />} />
                 <Route path="/athlete/settings" element={<SettingsPage role="athlete" />} />
               </Route>
 
@@ -93,6 +96,7 @@ function AnimatedRoutes() {
                 <Route path="/coach" element={<CoachDashboard />} />
                 <Route path="/coach/alerts" element={<CoachAlertCenter />} />
                 <Route path="/coach/roster" element={<CoachRoster />} />
+                <Route path="/coach/substitution" element={<CoachSubstitutionPage />} />
                 <Route path="/coach/settings" element={<SettingsPage role="coach" />} />
               </Route>
 
