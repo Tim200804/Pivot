@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Watch, Heart, Activity, Moon, ArrowRight, CheckCircle2, Smartphone,
-  ShieldCheck, Upload, FileSpreadsheet, AlertTriangle,
+  ShieldCheck, Upload, FileSpreadsheet, AlertTriangle, Download, X,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../../context/UserContext'
@@ -22,6 +22,35 @@ const APPLE_STEPS = ['connect', 'permissions', 'checkin', 'complete']
 const IMPORT_STEPS = ['import', 'checkin', 'complete']
 
 const REQUIRED_COLUMNS = ['date', 'hrv', 'rhr', 'sleepHours']
+const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls', '.csv']
+const ACCEPTED_FORMATS_LABEL = '.xlsx, .xls, .csv'
+
+const TEMPLATE_SAMPLE_ROWS = [
+  { date: '2026-08-16', hrv: 58, rhr: 54, sleepHours: 7.2 },
+  { date: '2026-08-17', hrv: 55, rhr: 55, sleepHours: 6.8 },
+  { date: '2026-08-18', hrv: 52, rhr: 56, sleepHours: 6.5 },
+  { date: '2026-08-19', hrv: 49, rhr: 57, sleepHours: 6.2 },
+  { date: '2026-08-20', hrv: 47, rhr: 58, sleepHours: 5.8 },
+  { date: '2026-08-21', hrv: 44, rhr: 59, sleepHours: 5.5 },
+  { date: '2026-08-22', hrv: 42, rhr: 60, sleepHours: 5.2 },
+]
+
+function getFileExtension(filename) {
+  const dot = filename.lastIndexOf('.')
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : ''
+}
+
+function isAcceptedImportFile(file) {
+  if (!file?.name) return false
+  return ACCEPTED_EXTENSIONS.includes(getFileExtension(file.name))
+}
+
+function downloadHealthTemplate() {
+  const sheet = XLSX.utils.json_to_sheet(TEMPLATE_SAMPLE_ROWS)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Health Data')
+  XLSX.writeFile(workbook, 'pivot-health-import-template.xlsx')
+}
 
 function normalizeHeaders(headers) {
   const map = {}
@@ -123,23 +152,28 @@ export default function AthleteOnboarding({ onComplete }) {
   const [imported, setImported] = useState(false)
   const [importCount, setImportCount] = useState(0)
   const [importErrors, setImportErrors] = useState([])
+  const [isDragging, setIsDragging] = useState(false)
+  const [invalidFileModal, setInvalidFileModal] = useState(null)
+  const fileInputRef = useRef(null)
+  const dragDepthRef = useRef(0)
 
   const navigate = useNavigate()
 
   const currentStepIndex = steps.indexOf(step)
 
-  const handleConnect = () => {
-    setConnecting(true)
-    setTimeout(() => {
-      setConnecting(false)
-      setConnected(true)
-      setTimeout(() => setStep('permissions'), 800)
-    }, 1800)
-  }
+  const showInvalidFileModal = useCallback((file) => {
+    setInvalidFileModal({
+      name: file?.name || 'Unknown file',
+      ext: getFileExtension(file?.name || ''),
+    })
+  }, [])
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0]
+  const processImportFile = useCallback(async (file) => {
     if (!file) return
+    if (!isAcceptedImportFile(file)) {
+      showInvalidFileModal(file)
+      return
+    }
 
     setImportFile(file)
     setImporting(true)
@@ -159,7 +193,6 @@ export default function AthleteOnboarding({ onComplete }) {
       } else {
         setImported(true)
         setImportCount(result.rows.length)
-        // Persist locally so the dashboard/demo can optionally consume it.
         localStorage.setItem('pivot_imported_health', JSON.stringify(result.rows))
       }
     } catch (err) {
@@ -167,6 +200,52 @@ export default function AthleteOnboarding({ onComplete }) {
     } finally {
       setImporting(false)
     }
+  }, [showInvalidFileModal])
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    processImportFile(file)
+    e.target.value = ''
+  }
+
+  const handleDragEnter = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current += 1
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current -= 1
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0
+      setIsDragging(false)
+    }
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current = 0
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    processImportFile(file)
+  }
+
+  const handleConnect = () => {
+    setConnecting(true)
+    setTimeout(() => {
+      setConnecting(false)
+      setConnected(true)
+      setTimeout(() => setStep('permissions'), 800)
+    }, 1800)
   }
 
   const handleComplete = () => {
@@ -312,27 +391,60 @@ export default function AthleteOnboarding({ onComplete }) {
                 Your daily check-in still follows this step.
               </p>
 
-              <div className="text-left text-xs text-pivot-600 dark:text-slate-300 bg-pivot-50 dark:bg-slate-800/50 rounded-xl p-4 mb-5 space-y-1">
-                <p className="font-semibold">Required columns (case-insensitive):</p>
-                <code className="block text-[10px] bg-white dark:bg-slate-900 rounded px-2 py-1">
-                  date, hrv, rhr, sleepHours
-                </code>
-                <p className="text-[10px] text-pivot-400">Accepted formats: .xlsx, .xls, .csv</p>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5 p-4 rounded-xl bg-pivot-50 dark:bg-slate-800/50 text-left">
+                <div className="text-xs text-pivot-600 dark:text-slate-300">
+                  <p className="font-semibold mb-1">Download the import template</p>
+                  <p className="text-[10px] text-pivot-400 leading-relaxed">
+                    Includes sample rows for {REQUIRED_COLUMNS.join(', ')}. Accepted formats: {ACCEPTED_FORMATS_LABEL}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={downloadHealthTemplate}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-pivot-200 dark:border-slate-600 text-xs font-semibold text-accent-blue hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shrink-0"
+                >
+                  <Download size={14} />
+                  Download template
+                </button>
               </div>
 
-              <label className="group relative flex flex-col items-center justify-center w-full py-8 mb-4 border-2 border-dashed border-pivot-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-accent-blue/60 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-all">
-                <Upload size={28} className="text-pivot-400 group-hover:text-accent-blue mb-2 transition-colors" />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    fileInputRef.current?.click()
+                  }
+                }}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                className={`group relative flex flex-col items-center justify-center w-full py-8 mb-4 border-2 border-dashed rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40 ${
+                  isDragging
+                    ? 'border-accent-blue bg-blue-50/60 dark:bg-blue-900/20 scale-[1.01]'
+                    : 'border-pivot-200 dark:border-slate-600 hover:border-accent-blue/60 hover:bg-blue-50/30 dark:hover:bg-blue-900/10'
+                }`}
+              >
+                <Upload size={28} className={`mb-2 transition-colors ${isDragging ? 'text-accent-blue' : 'text-pivot-400 group-hover:text-accent-blue'}`} />
                 <span className="text-sm text-pivot-600 dark:text-slate-300">
-                  {importFile ? importFile.name : 'Click to upload a spreadsheet'}
+                  {isDragging
+                    ? 'Drop your file here'
+                    : importFile
+                      ? importFile.name
+                      : 'Drag & drop or click to upload'}
                 </span>
-                <span className="text-[10px] text-pivot-400 mt-1">.xlsx, .xls, .csv</span>
+                <span className="text-[10px] text-pivot-400 mt-1">{ACCEPTED_FORMATS_LABEL}</span>
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept=".xlsx,.xls,.csv"
                   className="hidden"
                   onChange={handleFileChange}
                 />
-              </label>
+              </div>
 
               {importing && (
                 <div className="flex items-center justify-center gap-2 mb-4 text-xs text-pivot-500">
@@ -487,6 +599,59 @@ export default function AthleteOnboarding({ onComplete }) {
               >
                 Go to Dashboard <ArrowRight size={16} />
               </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {invalidFileModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+              onClick={() => setInvalidFileModal(null)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                transition={{ duration: 0.2 }}
+                className="glass-card w-full max-w-sm p-6 text-left"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={20} className="text-amber-500" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInvalidFileModal(null)}
+                    className="p-1 rounded-lg text-pivot-400 hover:text-pivot-600 dark:hover:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                    aria-label="Close"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <h3 className="text-base font-bold text-pivot-900 dark:text-white mb-2">Unsupported file type</h3>
+                <p className="text-sm text-pivot-600 dark:text-slate-300 leading-relaxed mb-1">
+                  <span className="font-medium">{invalidFileModal.name}</span>
+                  {invalidFileModal.ext
+                    ? ` (${invalidFileModal.ext})`
+                    : ' has no recognized extension'}
+                  {' '}cannot be imported.
+                </p>
+                <p className="text-xs text-pivot-500 dark:text-slate-400 mb-5">
+                  Please upload a spreadsheet in one of these formats: {ACCEPTED_FORMATS_LABEL}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setInvalidFileModal(null)}
+                  className="w-full py-2.5 rounded-xl bg-accent-blue text-white text-sm font-semibold hover:bg-blue-600 transition-colors"
+                >
+                  Got it
+                </button>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
