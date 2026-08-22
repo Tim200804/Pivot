@@ -51,6 +51,10 @@ function parseDateValue(value) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
 }
 
+function headerKey(headerMap, column) {
+  return headerMap[column.toLowerCase()]
+}
+
 function validateHealthSheet(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return { errors: ['The uploaded file is empty.'], rows: [] }
@@ -58,7 +62,7 @@ function validateHealthSheet(rows) {
 
   const rawHeaders = Object.keys(rows[0])
   const headerMap = normalizeHeaders(rawHeaders)
-  const missing = REQUIRED_COLUMNS.filter(c => !(c in headerMap))
+  const missing = REQUIRED_COLUMNS.filter(c => !(c.toLowerCase() in headerMap))
   if (missing.length > 0) {
     return { errors: [`Missing required columns: ${missing.join(', ')}`], rows: [] }
   }
@@ -68,20 +72,20 @@ function validateHealthSheet(rows) {
 
   rows.forEach((row, idx) => {
     const rowNum = idx + 2 // +1 header, +1 1-based
-    const date = parseDateValue(row[headerMap.date])
+    const date = parseDateValue(row[headerKey(headerMap, 'date')])
     if (!date) errors.push(`Row ${rowNum}: date is invalid.`)
 
-    const hrv = Number(row[headerMap.hrv])
+    const hrv = Number(row[headerKey(headerMap, 'hrv')])
     if (!Number.isFinite(hrv) || hrv <= 0) {
       errors.push(`Row ${rowNum}: hrv must be a positive number.`)
     }
 
-    const rhr = Number(row[headerMap.rhr])
+    const rhr = Number(row[headerKey(headerMap, 'rhr')])
     if (!Number.isFinite(rhr) || rhr <= 0) {
       errors.push(`Row ${rowNum}: rhr must be a positive number.`)
     }
 
-    const sleepHours = Number(row[headerMap.sleepHours])
+    const sleepHours = Number(row[headerKey(headerMap, 'sleepHours')])
     if (!Number.isFinite(sleepHours) || sleepHours <= 0) {
       errors.push(`Row ${rowNum}: sleepHours must be a positive number.`)
     }
