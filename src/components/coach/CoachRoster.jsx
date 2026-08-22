@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronRight, XCircle, Activity, Heart, Moon, Users, GraduationCap, Ruler, Weight, LayoutGrid, List, Download, CheckSquare, Square, CheckCircle2, UserPlus } from 'lucide-react'
+import { Search, ChevronRight, XCircle, Activity, Heart, Moon, Users, GraduationCap, Ruler, Weight, LayoutGrid, List, Download, CheckSquare, Square, CheckCircle2, AlertTriangle, UserPlus } from 'lucide-react'
 import Sidebar from '../ui/Sidebar'
 import AlertBadge, { StatusPill } from '../ui/AlertBadge'
 import HealthTrendChart from '../ui/HealthTrendChart'
@@ -8,7 +8,8 @@ import { useTheme } from '../../context/ThemeContext'
 import { useAlerts } from '../../context/AlertContext'
 import { isMockMode, apiListCoaches, apiAssignAthletes, apiGetHealthMetrics } from '../../config/api'
 
-function Toast({ message, visible }) {
+function Toast({ message, visible, type = 'success' }) {
+  const isWarning = type === 'warning'
   return (
     <AnimatePresence>
       {visible && (
@@ -16,9 +17,11 @@ function Toast({ message, visible }) {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 text-white shadow-xl text-sm font-medium"
+          className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl shadow-xl text-sm font-medium ${
+            isWarning ? 'bg-amber-500 text-white' : 'bg-emerald-600 text-white'
+          }`}
         >
-          <CheckCircle2 size={18} />
+          {isWarning ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
           {message}
         </motion.div>
       )}
@@ -34,7 +37,7 @@ export default function CoachRoster() {
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState('grid')
   const [selectedIds, setSelectedIds] = useState(new Set())
-  const [toast, setToast] = useState({ visible: false, message: '' })
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'success' })
 
   // Assign-to-coach modal state
   const [assignOpen, setAssignOpen] = useState(false)
@@ -46,9 +49,9 @@ export default function CoachRoster() {
   const [detailHealth, setDetailHealth] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  const showToast = (msg) => {
-    setToast({ visible: true, message: msg })
-    setTimeout(() => setToast({ visible: false, message: '' }), 2500)
+  const showToast = (msg, type = 'success') => {
+    setToast({ visible: true, message: msg, type })
+    setTimeout(() => setToast({ visible: false, message: '', type: 'success' }), 2500)
   }
 
   const openAssign = async () => {
@@ -137,9 +140,21 @@ export default function CoachRoster() {
   }
 
   const handleExport = () => {
-    const toExport = selectedIds.size > 0
-      ? sortedByAlert.filter(a => selectedIds.has(a.id))
-      : sortedByAlert
+    if (selectedIds.size === 0) {
+      // Export an empty CSV with headers only and warn the user
+      const csv = 'Name,School,Team,Position,Status,HRV,RHR,Sleep,Height,Weight,Age'
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `roster_export_${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('No athletes selected. Exported empty file.', 'warning')
+      return
+    }
+
+    const toExport = sortedByAlert.filter(a => selectedIds.has(a.id))
 
     const csv = [
       'Name,School,Team,Position,Status,HRV,RHR,Sleep,Height,Weight,Age',
@@ -344,7 +359,7 @@ export default function CoachRoster() {
                       </div>
 
                       {alerts.filter(a => a.athleteId === athlete.id).length > 0 && (
-                        <div className="flex gap-1 mt-2">
+                        <div className="flex flex-wrap gap-1 mt-2">
                           {alerts.filter(a => a.athleteId === athlete.id).map((a, j) => (
                             <AlertBadge key={j} level={a.level} />
                           ))}
@@ -511,7 +526,7 @@ export default function CoachRoster() {
         )}
       </AnimatePresence>
 
-      <Toast message={toast.message} visible={toast.visible} />
+      <Toast message={toast.message} visible={toast.visible} type={toast.type} />
     </div>
   )
 }
