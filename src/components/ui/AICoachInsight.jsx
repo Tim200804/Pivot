@@ -1,53 +1,24 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, RefreshCw, AlertCircle, MessageSquare, Send, Trash2, X } from 'lucide-react'
-import { getAICoachInsight, getAIChatResponse, loadChatHistory, saveChatHistory, clearChatHistory } from '../../utils/aiCoach'
+import { getAICoachInsight, getAIChatResponse, loadChatHistory, saveChatHistory, clearChatHistory, getFallbackInsight } from '../../utils/aiCoach'
 
-const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
+const AICoachInsight = memo(function AICoachInsight({ athlete, checkin, deferInitialInsight = true }) {
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [insightRequested, setInsightRequested] = useState(false)
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const inputRef = useRef(null)
-
-  // Load history + generate initial insight on mount
-  useEffect(() => {
-    const history = loadChatHistory(athlete.id)
-    if (history.length > 0) {
-      setMessages(history)
-    } else {
-      generateInitialInsight()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [athlete.id])
-
-  // Persist messages whenever they change
-  useEffect(() => {
-    if (messages.length > 0) {
-      saveChatHistory(athlete.id, messages)
-    }
-  }, [messages, athlete.id])
-
-  // Auto-scroll message container to bottom (without scrolling the whole page)
-  useEffect(() => {
-    const container = messagesContainerRef.current
-    if (container) {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
-    }
-  }, [messages, isChatOpen])
-
-  // Focus input when chat opens
-  useEffect(() => {
-    if (isChatOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100)
-    }
-  }, [isChatOpen])
+  const containerRef = useRef(null)
+  const isVisibleRef = useRef(false)
 
   const generateInitialInsight = useCallback(async () => {
+    setInsightRequested(true)
     setLoading(true)
     setError(false)
     setErrorMessage('')
@@ -66,6 +37,58 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
     }
     setLoading(false)
   }, [athlete, checkin])
+
+  // Load history on mount; defer AI call until visible (A1)
+  useEffect(() => {
+    const history = loadChatHistory(athlete.id)
+    if (history.length > 0) {
+      setMessages(history)
+      setInsightRequested(true)
+    } else if (!deferInitialInsight) {
+      generateInitialInsight()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athlete.id, deferInitialInsight])
+
+  useEffect(() => {
+    if (!deferInitialInsight || insightRequested) return
+    const el = containerRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      generateInitialInsight()
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some(e => e.isIntersecting) && !isVisibleRef.current) {
+          isVisibleRef.current = true
+          generateInitialInsight()
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '80px', threshold: 0.1 },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [deferInitialInsight, insightRequested, generateInitialInsight])
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveChatHistory(athlete.id, messages)
+    }
+  }, [messages, athlete.id])
+
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    }
+  }, [messages, isChatOpen])
+
+  useEffect(() => {
+    if (isChatOpen) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [isChatOpen])
 
   const handleSend = useCallback(async () => {
     const text = inputValue.trim()
@@ -123,9 +146,11 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
   }, [athlete.id, generateInitialInsight])
 
   const lastInsight = messages.find(m => m.role === 'assistant')?.text || ''
+  const placeholderInsight = getFallbackInsight(athlete, checkin)
 
   return (
     <motion.div
+      ref={containerRef}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.08 }}
@@ -180,19 +205,24 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin }) {
               className="space-y-2"
             >
               {loading && messages.length === 0 ? (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map(i => (
-                      <motion.div
-                        key={i}
-                        className="w-2 h-2 rounded-full bg-violet-400"
-                        animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                      />
-                    ))}
+                <div className="space-y-2">
+                  <p className="text-sm text-pivot-600 dark:text-slate-300 leading-relaxed">{placeholderInsight}</p>
+                  <div className="flex items-center gap-3 py-1">
+                    <div className="flex gap-1">
+                      {[0, 1, 2].map(i => (
+                        <motion.div
+                          key={i}
+                          className="w-2 h-2 rounded-full bg-violet-400"
+                          animate={{ opacity: [0.3, 1, 0.3] }}
+                          transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-pivot-400 dark:text-slate-500">Loading personalized insight…</span>
                   </div>
-                  <span className="text-sm text-pivot-500 dark:text-slate-400">Analyzing your data...</span>
                 </div>
+              ) : !insightRequested && messages.length === 0 ? (
+                <p className="text-sm text-pivot-600 dark:text-slate-300 leading-relaxed">{placeholderInsight}</p>
               ) : error ? (
                 <div className="flex items-center gap-2 text-sm text-pivot-500 dark:text-slate-400">
                   <AlertCircle size={16} className="text-amber-500" />

@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ThemeProvider } from './context/ThemeContext'
 import { UserProvider, useUser } from './context/UserContext'
 import { AlertProvider } from './context/AlertContext'
+import { AthleteDataProvider } from './context/AthleteDataContext'
 import { MoodColorProvider } from './context/MoodColorContext'
 import SplashScreen from './components/auth/SplashScreen'
 import ErrorBoundary from './components/ui/ErrorBoundary'
@@ -138,9 +139,11 @@ export default function App() {
     <ThemeProvider>
       <UserProvider>
         <AlertProvider>
-          <MoodColorProvider>
-            <AppWithSplash />
-          </MoodColorProvider>
+          <AthleteDataProvider>
+            <MoodColorProvider>
+              <AppWithSplash />
+            </MoodColorProvider>
+          </AthleteDataProvider>
         </AlertProvider>
       </UserProvider>
     </ThemeProvider>

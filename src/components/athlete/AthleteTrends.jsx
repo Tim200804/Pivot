@@ -6,8 +6,8 @@ import HealthTrendChart from '../ui/HealthTrendChart'
 import TrainingImpactChart from '../ui/TrainingImpactChart'
 import { useTheme } from '../../context/ThemeContext'
 import { useUser } from '../../context/UserContext'
-import { isMockMode, apiGetHealthMetrics, apiGetTrainingMetrics, apiGetTrainingCorrelation, apiGetTrainingSuggestion } from '../../config/api'
-import { ATHLETES } from '../../data/mockData'
+import { useAthleteData } from '../../context/AthleteDataContext'
+import { isMockMode, apiGetTrainingCorrelation, apiGetTrainingSuggestion } from '../../config/api'
 
 const RANGE_OPTIONS = [
   { value: '7d', label: '7 Days' },
@@ -122,81 +122,78 @@ function generateRangeData(athlete, range) {
   return { health, training, labelPrefix: '6-Month', trendLabel: '6-Month' }
 }
 
+function ChartSkeleton() {
+  return (
+    <div className="glass-card p-5 animate-pulse">
+      <div className="h-4 w-48 bg-pivot-100 dark:bg-slate-700 rounded mb-4" />
+      <div className="h-48 bg-pivot-50 dark:bg-slate-800/50 rounded-xl" />
+    </div>
+  )
+}
+
 export default function AthleteTrends() {
   const { theme } = useTheme()
   const { user } = useUser()
+  const { athlete, ensureTrendMetrics } = useAthleteData()
   const isDark = theme === 'dark'
   const [timeRange, setTimeRange] = useState('7d')
   const [healthRows, setHealthRows] = useState([])
   const [trainingRows, setTrainingRows] = useState([])
+  const [metricsLoading, setMetricsLoading] = useState(!isMockMode())
   const [correlation, setCorrelation] = useState(null)
   const [suggestion, setSuggestion] = useState(null)
   const [suggestionLoading, setSuggestionLoading] = useState(false)
-  const [loading, setLoading] = useState(!isMockMode())
 
   useEffect(() => {
     if (isMockMode()) {
-      const displayName = user?.name || 'Morgan Smith'
-      const mockAthlete = ATHLETES.find(a => a.name === displayName) || ATHLETES.find(a => a.name === 'Morgan Smith') || ATHLETES[0]
-      setHealthRows(mockAthlete.health || [])
-      setTrainingRows(mockAthlete.training || [])
-      setCorrelation({ loadVsHrv: -0.72, loadVsRhr: 0.68, loadVsSleep: 0.55 })
+      setHealthRows(athlete?.health || [])
+      setTrainingRows(athlete?.training || [])
+      setCorrelation({ correlations: { loadVsHrv: -0.72, loadVsRhr: 0.68, loadVsSleep: 0.55 } })
       setSuggestion({ text: 'Reduce volume by 20% for 2 days; prioritize sleep before next high-intensity session.', actions: ['Drop second practice', 'Target 8+ hrs sleep', 'Light mobility only'] })
-      setSuggestionLoading(false)
-      setLoading(false)
+      setMetricsLoading(false)
       return
     }
     if (!user?.id) return
-    let cancelled = false
-    setLoading(true)
-    Promise.all([
-      apiGetHealthMetrics(user.id, { limit: 180 }),
-      apiGetTrainingMetrics(user.id, { limit: 180 }),
-      apiGetTrainingCorrelation(user.id, { days: 28 }).catch(() => null),
-    ])
-      .then(([healthRes, trainingRes, correlationRes]) => {
-        if (cancelled) return
-        const h = (healthRes?.metrics || []).map(r => ({ ...r, day: r.day || r.date })).reverse()
-        const t = (trainingRes?.metrics || []).map(r => ({ ...r, day: r.day || r.date })).reverse()
-        setHealthRows(h)
-        setTrainingRows(t)
-        setCorrelation(correlationRes?.correlation || null)
 
-        // Load AI-style training adjustment suggestion in parallel
-        setSuggestionLoading(true)
-        apiGetTrainingSuggestion(user.id, { days: 14 })
-          .then(res => { if (!cancelled) setSuggestion(res?.suggestion || null) })
-          .catch(() => { if (!cancelled) setSuggestion(null) })
-          .finally(() => { if (!cancelled) setSuggestionLoading(false) })
+    let cancelled = false
+    setMetricsLoading(true)
+
+    ensureTrendMetrics(timeRange)
+      .then(({ health, training }) => {
+        if (cancelled) return
+        setHealthRows(health)
+        setTrainingRows(training)
       })
       .catch(() => {
         if (!cancelled) {
           setHealthRows([])
           setTrainingRows([])
-          setCorrelation(null)
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setMetricsLoading(false)
       })
+
+    return () => { cancelled = true }
+  }, [user?.id, timeRange, ensureTrendMetrics, athlete, isMockMode])
+
+  useEffect(() => {
+    if (isMockMode() || !user?.id) return
+    let cancelled = false
+    apiGetTrainingCorrelation(user.id, { days: 28 })
+      .then(res => { if (!cancelled) setCorrelation(res?.correlation || res || null) })
+      .catch(() => { if (!cancelled) setCorrelation(null) })
+
+    setSuggestionLoading(true)
+    apiGetTrainingSuggestion(user.id, { days: 14 })
+      .then(res => { if (!cancelled) setSuggestion(res?.suggestion || null) })
+      .catch(() => { if (!cancelled) setSuggestion(null) })
+      .finally(() => { if (!cancelled) setSuggestionLoading(false) })
+
     return () => { cancelled = true }
   }, [user?.id])
 
   const data = useMemo(() => generateRangeData({ health: healthRows, training: trainingRows }, timeRange), [healthRows, trainingRows, timeRange])
-
-  if (loading) {
-    return (
-      <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
-        <Sidebar role="athlete" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-pivot-500 dark:text-slate-400">
-            <div className="w-8 h-8 border-2 border-pivot-200 dark:border-slate-600 border-t-accent-blue rounded-full animate-spin" />
-            <p className="text-sm">Loading trends...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-[100dvh] flex bg-surface-light dark:bg-surface-dark transition-colors duration-300">
@@ -227,6 +224,9 @@ export default function AthleteTrends() {
           </motion.div>
 
           {/* Health Trends */}
+          {metricsLoading ? (
+            <ChartSkeleton />
+          ) : (
           <motion.div
             key={`health-${timeRange}`}
             initial={{ opacity: 0, y: 10 }}
@@ -240,8 +240,12 @@ export default function AthleteTrends() {
               darkMode={isDark}
             />
           </motion.div>
+          )}
 
           {/* Training Load Overlay */}
+          {metricsLoading ? (
+            <ChartSkeleton />
+          ) : (
           <motion.div
             key={`impact-${timeRange}`}
             initial={{ opacity: 0, y: 10 }}
@@ -255,8 +259,12 @@ export default function AthleteTrends() {
               darkMode={isDark}
             />
           </motion.div>
+          )}
 
           {/* Training Trends */}
+          {metricsLoading ? (
+            <ChartSkeleton />
+          ) : (
           <motion.div
             key={`training-${timeRange}`}
             initial={{ opacity: 0, y: 10 }}
@@ -270,6 +278,7 @@ export default function AthleteTrends() {
               darkMode={isDark}
             />
           </motion.div>
+          )}
 
           {/* Trend Analysis Cards */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useMemo, memo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
 import { useAlerts } from '../../context/AlertContext'
-import { isMockMode } from '../../config/api'
-import { apiGetUnreadCount } from '../../config/api'
+import { useAthleteDataOptional } from '../../context/AthleteDataContext'
+import { prefetchAthleteRoute } from '../../utils/prefetchAthleteRoutes'
 
 const athleteLinks = [
   { path: '/athlete', icon: LayoutDashboard, label: 'Dashboard', exact: true },
@@ -29,25 +29,16 @@ const Sidebar = memo(function Sidebar({ role }) {
   const location = useLocation()
   const { user, logout } = useUser()
   const { totalAlerts, alertCount } = useAlerts()
+  const athleteData = useAthleteDataOptional()
   const [collapsed, setCollapsed] = useState(false)
-  // Unread coach messages (athletes only)
-  const [unreadMessages, setUnreadMessages] = useState(0)
+  const unreadMessages = athleteData?.unreadCount ?? 0
 
-  useEffect(() => {
-    if (role !== 'athlete' || isMockMode()) return
-    let cancelled = false
-    const fetch = async () => {
-      try {
-        const data = await apiGetUnreadCount()
-        if (!cancelled) setUnreadMessages(data.unreadCount || 0)
-      } catch {
-        // ignore
-      }
+  const handleNavHover = (path) => {
+    prefetchAthleteRoute(path)
+    if (path === '/athlete/checkin' && athleteData?.bootstrap) {
+      athleteData.bootstrap()
     }
-    fetch()
-    const t = setInterval(fetch, 30000)
-    return () => { cancelled = true; clearInterval(t) }
-  }, [role])
+  }
 
   const links = useMemo(() => role === 'athlete' ? athleteLinks : coachLinks, [role])
 
@@ -115,6 +106,8 @@ const Sidebar = memo(function Sidebar({ role }) {
             <button
               key={link.path}
               onClick={() => navigate(link.path)}
+              onMouseEnter={() => handleNavHover(link.path)}
+              onFocus={() => handleNavHover(link.path)}
               className={`sidebar-link w-full ${active ? 'sidebar-link-active' : 'sidebar-link-inactive'} ${collapsed ? 'justify-center' : ''} relative`}
               title={collapsed ? link.label : undefined}
             >
