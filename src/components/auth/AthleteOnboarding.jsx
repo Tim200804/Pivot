@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Watch, Heart, Activity, Moon, ArrowRight, CheckCircle2, Smartphone, ShieldCheck } from 'lucide-react'
+import {
+  Watch, Heart, Activity, Moon, ArrowRight, CheckCircle2, Smartphone,
+  ShieldCheck, Upload, FileSpreadsheet, AlertTriangle,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../../context/UserContext'
+import * as XLSX from 'xlsx'
 
 const slide = {
   initial: { opacity: 0, x: 20 },
@@ -10,9 +14,90 @@ const slide = {
   exit: { opacity: 0, x: -20, transition: { duration: 0.2 } },
 }
 
+// Feature flag: set VITE_ENABLE_APPLE_HEALTH=true to show Apple Watch cards.
+// Otherwise the onboarding presents an Excel/CSV import card instead.
+const ENABLE_APPLE_HEALTH = import.meta.env.VITE_ENABLE_APPLE_HEALTH === 'true'
+
+const APPLE_STEPS = ['connect', 'permissions', 'checkin', 'complete']
+const IMPORT_STEPS = ['import', 'checkin', 'complete']
+
+const REQUIRED_COLUMNS = ['date', 'hrv', 'rhr', 'sleepHours']
+
+function normalizeHeaders(headers) {
+  const map = {}
+  headers.forEach(h => {
+    const key = String(h).trim().toLowerCase()
+    map[key] = h
+  })
+  return map
+}
+
+function parseDateValue(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString().split('T')[0]
+  }
+  if (typeof value === 'number') {
+    // Excel serial date
+    try {
+      const { y, m, d } = XLSX.SSF.parse_date_code(value)
+      return new Date(y, m - 1, d).toISOString().split('T')[0]
+    } catch {
+      return null
+    }
+  }
+  const s = String(value).trim()
+  if (!s) return null
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
+}
+
+function validateHealthSheet(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { errors: ['The uploaded file is empty.'], rows: [] }
+  }
+
+  const rawHeaders = Object.keys(rows[0])
+  const headerMap = normalizeHeaders(rawHeaders)
+  const missing = REQUIRED_COLUMNS.filter(c => !(c in headerMap))
+  if (missing.length > 0) {
+    return { errors: [`Missing required columns: ${missing.join(', ')}`], rows: [] }
+  }
+
+  const errors = []
+  const validated = []
+
+  rows.forEach((row, idx) => {
+    const rowNum = idx + 2 // +1 header, +1 1-based
+    const date = parseDateValue(row[headerMap.date])
+    if (!date) errors.push(`Row ${rowNum}: date is invalid.`)
+
+    const hrv = Number(row[headerMap.hrv])
+    if (!Number.isFinite(hrv) || hrv <= 0) {
+      errors.push(`Row ${rowNum}: hrv must be a positive number.`)
+    }
+
+    const rhr = Number(row[headerMap.rhr])
+    if (!Number.isFinite(rhr) || rhr <= 0) {
+      errors.push(`Row ${rowNum}: rhr must be a positive number.`)
+    }
+
+    const sleepHours = Number(row[headerMap.sleepHours])
+    if (!Number.isFinite(sleepHours) || sleepHours <= 0) {
+      errors.push(`Row ${rowNum}: sleepHours must be a positive number.`)
+    }
+
+    if (errors.every(e => !e.startsWith(`Row ${rowNum}`))) {
+      validated.push({ date, hrv, rhr, sleepHours })
+    }
+  })
+
+  return errors.length > 0 ? { errors, rows: [] } : { errors: [], rows: validated }
+}
+
 export default function AthleteOnboarding({ onComplete }) {
   const { user } = useUser()
-  const [step, setStep] = useState('connect') // 'connect' | 'permissions' | 'checkin' | 'complete'
+  const steps = ENABLE_APPLE_HEALTH ? APPLE_STEPS : IMPORT_STEPS
+  const [step, setStep] = useState(steps[0])
   const [connecting, setConnecting] = useState(false)
   const [connected, setConnected] = useState(false)
   const [permissions, setPermissions] = useState({
@@ -27,7 +112,17 @@ export default function AthleteOnboarding({ onComplete }) {
     fatigue: 4,
     journal: '',
   })
+
+  // Excel/CSV import state
+  const [importFile, setImportFile] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [imported, setImported] = useState(false)
+  const [importCount, setImportCount] = useState(0)
+  const [importErrors, setImportErrors] = useState([])
+
   const navigate = useNavigate()
+
+  const currentStepIndex = steps.indexOf(step)
 
   const handleConnect = () => {
     setConnecting(true)
@@ -36,6 +131,38 @@ export default function AthleteOnboarding({ onComplete }) {
       setConnected(true)
       setTimeout(() => setStep('permissions'), 800)
     }, 1800)
+  }
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImportFile(file)
+    setImporting(true)
+    setImported(false)
+    setImportCount(0)
+    setImportErrors([])
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+      const result = validateHealthSheet(rows)
+
+      if (result.errors.length > 0) {
+        setImportErrors(result.errors)
+      } else {
+        setImported(true)
+        setImportCount(result.rows.length)
+        // Persist locally so the dashboard/demo can optionally consume it.
+        localStorage.setItem('pivot_imported_health', JSON.stringify(result.rows))
+      }
+    } catch (err) {
+      setImportErrors([err.message || 'Failed to read the uploaded file.'])
+    } finally {
+      setImporting(false)
+    }
   }
 
   const handleComplete = () => {
@@ -48,26 +175,24 @@ export default function AthleteOnboarding({ onComplete }) {
       <div className="w-full max-w-md">
         {/* Progress */}
         <div className="flex items-center justify-between mb-8">
-          {['connect', 'permissions', 'checkin', 'complete'].map((s, i) => (
+          {steps.map((s, i) => (
             <div key={s} className="flex items-center">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                ['connect', 'permissions', 'checkin', 'complete'].indexOf(step) >= i
-                  ? 'bg-accent-blue text-white'
-                  : 'bg-pivot-100 dark:bg-slate-700 text-pivot-400'
+                currentStepIndex >= i ? 'bg-accent-blue text-white' : 'bg-pivot-100 dark:bg-slate-700 text-pivot-400'
               }`}>
                 {i + 1}
               </div>
-              {i < 3 && <div className={`w-8 h-0.5 mx-1 transition-colors ${
-                ['connect', 'permissions', 'checkin', 'complete'].indexOf(step) > i
-                  ? 'bg-accent-blue'
-                  : 'bg-pivot-100 dark:bg-slate-700'
-              }`} />}
+              {i < steps.length - 1 && (
+                <div className={`w-8 h-0.5 mx-1 transition-colors ${
+                  currentStepIndex > i ? 'bg-accent-blue' : 'bg-pivot-100 dark:bg-slate-700'
+                }`} />
+              )}
             </div>
           ))}
         </div>
 
         <AnimatePresence mode="wait">
-          {step === 'connect' && (
+          {ENABLE_APPLE_HEALTH && step === 'connect' && (
             <motion.div key="connect" variants={slide} initial="initial" animate="animate" exit="exit" className="glass-card p-8 text-center">
               <div className="w-20 h-20 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center mx-auto mb-5">
                 <Watch size={36} className="text-accent-blue" />
@@ -132,7 +257,7 @@ export default function AthleteOnboarding({ onComplete }) {
             </motion.div>
           )}
 
-          {step === 'permissions' && (
+          {ENABLE_APPLE_HEALTH && step === 'permissions' && (
             <motion.div key="permissions" variants={slide} initial="initial" animate="animate" exit="exit" className="glass-card p-8">
               <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center mx-auto mb-5">
                 <ShieldCheck size={30} className="text-emerald-500" />
@@ -168,6 +293,85 @@ export default function AthleteOnboarding({ onComplete }) {
                 className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
               >
                 Continue <ArrowRight size={16} />
+              </button>
+            </motion.div>
+          )}
+
+          {!ENABLE_APPLE_HEALTH && step === 'import' && (
+            <motion.div key="import" variants={slide} initial="initial" animate="animate" exit="exit" className="glass-card p-8 text-center">
+              <div className="w-20 h-20 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center mx-auto mb-5">
+                <FileSpreadsheet size={36} className="text-accent-blue" />
+              </div>
+              <h2 className="text-xl font-bold text-pivot-900 dark:text-white mb-2">Import Your Health Data</h2>
+              <p className="text-sm text-pivot-500 dark:text-slate-400 mb-6 leading-relaxed">
+                Apple Health requires an Apple-certified integration, so Pivot accepts a spreadsheet upload instead.
+                Your daily check-in still follows this step.
+              </p>
+
+              <div className="text-left text-xs text-pivot-600 dark:text-slate-300 bg-pivot-50 dark:bg-slate-800/50 rounded-xl p-4 mb-5 space-y-1">
+                <p className="font-semibold">Required columns (case-insensitive):</p>
+                <code className="block text-[10px] bg-white dark:bg-slate-900 rounded px-2 py-1">
+                  date, hrv, rhr, sleepHours
+                </code>
+                <p className="text-[10px] text-pivot-400">Accepted formats: .xlsx, .xls, .csv</p>
+              </div>
+
+              <label className="group relative flex flex-col items-center justify-center w-full py-8 mb-4 border-2 border-dashed border-pivot-200 dark:border-slate-600 rounded-xl cursor-pointer hover:border-accent-blue/60 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-all">
+                <Upload size={28} className="text-pivot-400 group-hover:text-accent-blue mb-2 transition-colors" />
+                <span className="text-sm text-pivot-600 dark:text-slate-300">
+                  {importFile ? importFile.name : 'Click to upload a spreadsheet'}
+                </span>
+                <span className="text-[10px] text-pivot-400 mt-1">.xlsx, .xls, .csv</span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
+
+              {importing && (
+                <div className="flex items-center justify-center gap-2 mb-4 text-xs text-pivot-500">
+                  <span className="w-4 h-4 border-2 border-pivot-300 border-t-accent-blue rounded-full animate-spin" />
+                  Validating your data…
+                </div>
+              )}
+
+              {importErrors.length > 0 && (
+                <div className="text-left mb-5 p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs">
+                  <div className="flex items-center gap-1.5 font-semibold mb-2">
+                    <AlertTriangle size={14} /> Validation failed
+                  </div>
+                  <ul className="list-disc pl-4 space-y-1 max-h-32 overflow-y-auto">
+                    {importErrors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {imported && (
+                <div className="mb-5 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs">
+                  <div className="flex items-center gap-1.5 font-semibold mb-1">
+                    <CheckCircle2 size={14} /> Import validated
+                  </div>
+                  <p>{importCount} row{importCount === 1 ? '' : 's'} ready to use.</p>
+                </div>
+              )}
+
+              <button
+                onClick={() => setStep('checkin')}
+                disabled={!imported}
+                className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                Continue to Check-in <ArrowRight size={16} />
+              </button>
+
+              <button
+                onClick={() => setStep('checkin')}
+                className="mt-3 text-xs text-pivot-400 hover:text-pivot-600 dark:hover:text-slate-300"
+              >
+                Skip import for now
               </button>
             </motion.div>
           )}
@@ -257,12 +461,13 @@ export default function AthleteOnboarding({ onComplete }) {
               </div>
               <h2 className="text-xl font-bold text-pivot-900 dark:text-white mb-2">You're all set, {user?.name?.split(' ')[0] || 'Athlete'}</h2>
               <p className="text-sm text-pivot-500 dark:text-slate-400 mb-6 leading-relaxed">
-                Pivot now has a baseline. Your dashboard will update as new data comes in from your watch and daily check-ins.
+                Pivot now has a baseline. Your dashboard will update as new data comes in.
               </p>
 
               <div className="bg-pivot-50 dark:bg-slate-800/50 rounded-xl p-4 mb-6 text-left space-y-2">
                 <div className="flex items-center gap-2 text-xs text-pivot-600 dark:text-slate-300">
-                  <CheckCircle2 size={14} className="text-emerald-500" /> Apple Watch connected (demo)
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  {ENABLE_APPLE_HEALTH ? 'Apple Watch connected (demo)' : 'Health data imported'}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-pivot-600 dark:text-slate-300">
                   <CheckCircle2 size={14} className="text-emerald-500" /> First check-in saved
