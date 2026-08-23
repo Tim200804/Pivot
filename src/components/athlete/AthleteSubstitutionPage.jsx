@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Calendar, UserCheck, UserX, Send, Loader2, AlertCircle,
-  CheckCircle2, XCircle, Clock, Users, MessageSquare,
+  CheckCircle2, XCircle, Clock, Users, MessageSquare, X,
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
 import Sidebar from '../ui/Sidebar'
@@ -32,6 +32,9 @@ export default function AthleteSubstitutionPage() {
   const [responseNote, setResponseNote] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [pastDateModalOpen, setPastDateModalOpen] = useState(false)
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   const load = async () => {
     setLoading(true)
@@ -62,6 +65,10 @@ export default function AthleteSubstitutionPage() {
     setSuccess('')
     if (!form.trainingDate || !form.substituteId) {
       setError('Please select a training date and a substitute')
+      return
+    }
+    if (form.trainingDate < todayStr) {
+      setPastDateModalOpen(true)
       return
     }
     setSubmitting(true)
@@ -165,6 +172,7 @@ export default function AthleteSubstitutionPage() {
                     <input
                       type="date"
                       required
+                      min={todayStr}
                       value={form.trainingDate}
                       onChange={e => setForm(prev => ({ ...prev, trainingDate: e.target.value }))}
                       className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
@@ -366,6 +374,52 @@ export default function AthleteSubstitutionPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+          <AnimatePresence>
+            {pastDateModalOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+                onClick={() => setPastDateModalOpen(false)}
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                  transition={{ duration: 0.2 }}
+                  className="glass-card w-full max-w-sm p-6 text-left"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center shrink-0">
+                      <AlertCircle size={20} className="text-amber-500" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPastDateModalOpen(false)}
+                      className="p-1 rounded-lg text-pivot-400 hover:text-pivot-600 dark:hover:text-slate-300 hover:bg-pivot-100 dark:hover:bg-slate-700 transition-colors"
+                      aria-label="Close"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <h3 className="text-base font-bold text-pivot-900 dark:text-white mb-2">Training date cannot be in the past</h3>
+                  <p className="text-sm text-pivot-600 dark:text-slate-300 leading-relaxed mb-5">
+                    Please pick today or a future date for the training you need to miss.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPastDateModalOpen(false)}
+                    className="w-full py-2.5 rounded-xl bg-accent-blue text-white text-sm font-semibold hover:bg-blue-600 transition-colors"
+                  >
+                    Pick a valid date
+                  </button>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           </div>
         </main>
       </div>

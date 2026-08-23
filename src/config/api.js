@@ -432,6 +432,13 @@ export async function apiGetTrainingSuggestion(userId, { days = 14 } = {}) {
   return apiFetch(`/api/health/training-suggestion/${userId}?${params.toString()}`, { method: 'GET' })
 }
 
+export async function apiImportHealthMetrics({ userId, rows }) {
+  return apiFetch('/api/health/import', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, rows }),
+  })
+}
+
 /* ─── Substitution / leave request API ─── */
 
 export async function apiListSubstitutionRequests() {

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../../context/UserContext'
+import { apiSubmitCheckin, apiImportHealthMetrics } from '../../config/api'
 import * as XLSX from 'xlsx'
 
 const slide = {
@@ -154,6 +155,9 @@ export default function AthleteOnboarding({ onComplete }) {
   const [importErrors, setImportErrors] = useState([])
   const [isDragging, setIsDragging] = useState(false)
   const [invalidFileModal, setInvalidFileModal] = useState(null)
+  const [importUploading, setImportUploading] = useState(false)
+  const [checkinSaving, setCheckinSaving] = useState(false)
+  const [checkinError, setCheckinError] = useState('')
   const fileInputRef = useRef(null)
   const dragDepthRef = useRef(0)
 
@@ -251,6 +255,43 @@ export default function AthleteOnboarding({ onComplete }) {
   const handleComplete = () => {
     if (onComplete) onComplete()
     navigate('/athlete')
+  }
+
+  const handleContinueToCheckin = async () => {
+    const importedRows = localStorage.getItem('pivot_imported_health')
+    const rows = importedRows ? JSON.parse(importedRows) : []
+    if (Array.isArray(rows) && rows.length > 0) {
+      setImportUploading(true)
+      setImportErrors([])
+      try {
+        await apiImportHealthMetrics({ rows })
+        setImportUploading(false)
+      } catch (err) {
+        setImportUploading(false)
+        setImportErrors([err.message || 'Failed to upload imported health data. You can retry or continue without it.'])
+        return
+      }
+    }
+    setStep('checkin')
+  }
+
+  const handleSkipImport = () => {
+    setStep('checkin')
+  }
+
+  const handleSaveCheckin = async () => {
+    setCheckinSaving(true)
+    setCheckinError('')
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      await apiSubmitCheckin({ ...checkin, date: today })
+      localStorage.removeItem('pivot_imported_health')
+      setStep('complete')
+    } catch (err) {
+      setCheckinError(err.message || 'Failed to save check-in. Please try again.')
+    } finally {
+      setCheckinSaving(false)
+    }
   }
 
   return (
@@ -476,15 +517,22 @@ export default function AthleteOnboarding({ onComplete }) {
               )}
 
               <button
-                onClick={() => setStep('checkin')}
-                disabled={!imported}
+                onClick={handleContinueToCheckin}
+                disabled={!imported || importUploading}
                 className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Continue to Check-in <ArrowRight size={16} />
+                {importUploading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Uploading health data…
+                  </>
+                ) : (
+                  <>Continue to Check-in <ArrowRight size={16} /></>
+                )}
               </button>
 
               <button
-                onClick={() => setStep('checkin')}
+                onClick={handleSkipImport}
                 className="mt-3 text-xs text-pivot-400 hover:text-pivot-600 dark:hover:text-slate-300"
               >
                 Skip import for now
@@ -561,11 +609,26 @@ export default function AthleteOnboarding({ onComplete }) {
                 />
               </div>
 
+              {checkinError && (
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                  {checkinError}
+                </div>
+              )}
+
               <button
-                onClick={() => setStep('complete')}
-                className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                onClick={handleSaveCheckin}
+                disabled={checkinSaving}
+                className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
               >
-                Save Check-in <ArrowRight size={16} />
+                {checkinSaving ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>Save Check-in <ArrowRight size={16} /></>
+                )}
               </button>
             </motion.div>
           )}
