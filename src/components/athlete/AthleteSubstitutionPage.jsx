@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Calendar, UserCheck, UserX, Send, Loader2, AlertCircle,
   CheckCircle2, XCircle, Clock, Users, MessageSquare, X,
+  HelpCircle,
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
 import Sidebar from '../ui/Sidebar'
@@ -11,12 +12,16 @@ import {
   apiListSubstitutionCandidates,
   apiCreateSubstitutionRequest,
   apiRespondSubstitutionRequest,
+  apiRequesterRespondSubstitutionRequest,
 } from '../../config/api'
 
 const statusMeta = {
   pending_teammate: { label: 'Waiting for teammate', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', icon: Clock },
   teammate_accepted: { label: 'Teammate accepted — awaiting coach', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', icon: CheckCircle2 },
   teammate_rejected: { label: 'Teammate declined', color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/20', icon: XCircle },
+  pending_requester: { label: 'Waiting for your confirmation', color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/20', icon: HelpCircle },
+  requester_approved: { label: 'You confirmed — awaiting coach', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', icon: CheckCircle2 },
+  pending_coach: { label: 'Awaiting coach approval', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', icon: Clock },
   coach_approved: { label: 'Approved by coach', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2 },
   coach_rejected: { label: 'Not approved by coach', color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/20', icon: XCircle },
 }
@@ -28,8 +33,9 @@ export default function AthleteSubstitutionPage() {
   const [candidates, setCandidates] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({ trainingDate: '', reason: '', substituteId: '' })
+  const [form, setForm] = useState({ trainingDate: '', reason: '', substituteId: '', needsSubstitute: true })
   const [responseNote, setResponseNote] = useState('')
+  const [requesterNote, setRequesterNote] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [pastDateModalOpen, setPastDateModalOpen] = useState(false)
@@ -58,13 +64,18 @@ export default function AthleteSubstitutionPage() {
 
   const myRequests = useMemo(() => requests.filter(r => r.requesterId === user?.id), [requests, user])
   const incomingRequests = useMemo(() => requests.filter(r => r.substituteId === user?.id && r.status === 'pending_teammate'), [requests, user])
+  const pendingConfirmation = useMemo(() => requests.filter(r => r.requesterId === user?.id && r.status === 'pending_requester'), [requests, user])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess('')
-    if (!form.trainingDate || !form.substituteId) {
-      setError('Please select a training date and a substitute')
+    if (!form.trainingDate) {
+      setError('Please select a training date')
+      return
+    }
+    if (form.needsSubstitute && !form.substituteId) {
+      setError('Please select a substitute or uncheck "Need a substitute"')
       return
     }
     if (form.trainingDate < todayStr) {
@@ -75,8 +86,10 @@ export default function AthleteSubstitutionPage() {
     try {
       const res = await apiCreateSubstitutionRequest(form)
       if (res.success) {
-        setSuccess('Substitution request sent to your teammate and coach')
-        setForm({ trainingDate: '', reason: '', substituteId: '' })
+        setSuccess(form.needsSubstitute
+          ? 'Substitution request sent to your teammate and coach'
+          : 'Leave request sent to your coach')
+        setForm({ trainingDate: '', reason: '', substituteId: '', needsSubstitute: true })
         await load()
         setTab('list')
       } else {
@@ -97,6 +110,16 @@ export default function AthleteSubstitutionPage() {
     try {
       await apiRespondSubstitutionRequest(id, accept, responseNote)
       setResponseNote('')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Failed to respond')
+    }
+  }
+
+  const handleRequesterRespond = async (id, accept) => {
+    try {
+      await apiRequesterRespondSubstitutionRequest(id, accept, requesterNote)
+      setRequesterNote('')
       await load()
     } catch (err) {
       setError(err.message || 'Failed to respond')
@@ -193,52 +216,69 @@ export default function AthleteSubstitutionPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
-                    Choose a Substitute <span className="text-red-400">*</span>
-                  </label>
-                  {loading ? (
-                    <div className="flex items-center gap-2 text-sm text-pivot-400 py-3">
-                      <Loader2 size={16} className="animate-spin" /> Loading teammates...
-                    </div>
-                  ) : candidates.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-sm flex items-start gap-2">
-                      <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                      No teammate shares your position. You cannot create a substitution request right now.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {candidates.map(c => (
-                        <label
-                          key={c.id}
-                          className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                            form.substituteId === String(c.id)
-                              ? 'border-accent-blue bg-blue-50 dark:bg-blue-900/20'
-                              : 'border-pivot-200 dark:border-slate-600 hover:border-accent-blue/50'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="substitute"
-                            value={c.id}
-                            checked={form.substituteId === String(c.id)}
-                            onChange={e => setForm(prev => ({ ...prev, substituteId: e.target.value }))}
-                            className="accent-accent-blue w-4 h-4"
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-pivot-900 dark:text-white">{c.name}</p>
-                            <p className="text-xs text-pivot-500 dark:text-slate-400">{c.position}</p>
-                          </div>
-                          {form.substituteId === String(c.id) && <UserCheck size={18} className="text-accent-blue" />}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <label className="flex items-center gap-3 p-3 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 cursor-pointer transition-all hover:border-accent-blue/50">
+                  <input
+                    type="checkbox"
+                    checked={form.needsSubstitute}
+                    onChange={e => setForm(prev => ({ ...prev, needsSubstitute: e.target.checked, substituteId: e.target.checked ? prev.substituteId : '' }))}
+                    className="accent-accent-blue w-4 h-4"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-pivot-900 dark:text-white">Need a substitute</p>
+                    <p className="text-xs text-pivot-500 dark:text-slate-400">
+                      Uncheck if your training item does not require a replacement.
+                    </p>
+                  </div>
+                </label>
+
+                {form.needsSubstitute && (
+                  <div>
+                    <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
+                      Choose a Substitute <span className="text-red-400">*</span>
+                    </label>
+                    {loading ? (
+                      <div className="flex items-center gap-2 text-sm text-pivot-400 py-3">
+                        <Loader2 size={16} className="animate-spin" /> Loading teammates...
+                      </div>
+                    ) : candidates.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-sm flex items-start gap-2">
+                        <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                        No teammate shares your position. You cannot create a substitution request right now.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {candidates.map(c => (
+                          <label
+                            key={c.id}
+                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                              form.substituteId === String(c.id)
+                                ? 'border-accent-blue bg-blue-50 dark:bg-blue-900/20'
+                                : 'border-pivot-200 dark:border-slate-600 hover:border-accent-blue/50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="substitute"
+                              value={c.id}
+                              checked={form.substituteId === String(c.id)}
+                              onChange={e => setForm(prev => ({ ...prev, substituteId: e.target.value }))}
+                              className="accent-accent-blue w-4 h-4"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-pivot-900 dark:text-white">{c.name}</p>
+                              <p className="text-xs text-pivot-500 dark:text-slate-400">{c.position}</p>
+                            </div>
+                            {form.substituteId === String(c.id) && <UserCheck size={18} className="text-accent-blue" />}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <button
                   type="submit"
-                  disabled={submitting || candidates.length === 0}
+                  disabled={submitting || (form.needsSubstitute && candidates.length === 0)}
                   className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
@@ -256,6 +296,72 @@ export default function AthleteSubstitutionPage() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
+              {pendingConfirmation.length > 0 && (
+                <div className="glass-card p-6 border-l-4 border-violet-400">
+                  <h2 className="text-lg font-bold text-pivot-900 dark:text-white mb-4 flex items-center gap-2">
+                    <HelpCircle size={20} className="text-violet-500" />
+                    Needs Your Confirmation
+                  </h2>
+                  <div className="space-y-3">
+                    {pendingConfirmation.map(req => (
+                      <div
+                        key={req.id}
+                        className="p-4 rounded-xl border border-pivot-100 dark:border-slate-700 bg-pivot-50/50 dark:bg-slate-800/50"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold text-pivot-900 dark:text-white">
+                              Coach arranged your {req.position} substitution on {req.trainingDate}
+                            </p>
+                            {req.substituteName && (
+                              <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
+                                Substitute: {req.substituteName}
+                              </p>
+                            )}
+                            {!req.needsSubstitute && (
+                              <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
+                                No substitute required.
+                              </p>
+                            )}
+                            {req.reason && (
+                              <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
+                                Reason: {req.reason}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={() => handleRequesterRespond(req.id, true)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 transition-colors flex items-center gap-1"
+                            >
+                              <UserCheck size={14} /> Agree
+                            </button>
+                            <button
+                              onClick={() => handleRequesterRespond(req.id, false)}
+                              className="px-3 py-1.5 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600 transition-colors flex items-center gap-1"
+                            >
+                              <UserX size={14} /> Decline
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="block text-xs font-medium text-pivot-600 dark:text-slate-400 mb-1.5">
+                            Response note (optional)
+                          </label>
+                          <textarea
+                            value={requesterNote}
+                            onChange={e => setRequesterNote(e.target.value)}
+                            placeholder="e.g. I agree, but please note..."
+                            rows={2}
+                            className="w-full px-3 py-2 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 resize-none focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {incomingRequests.length > 0 && (
                 <div className="glass-card p-6">
                   <h2 className="text-lg font-bold text-pivot-900 dark:text-white mb-4 flex items-center gap-2">
@@ -339,9 +445,15 @@ export default function AthleteSubstitutionPage() {
                               <p className="text-sm font-semibold text-pivot-900 dark:text-white">
                                 {req.position} — {req.trainingDate}
                               </p>
-                              {req.substituteName && (
+                              {req.needsSubstitute ? (
+                                req.substituteName && (
+                                  <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
+                                    Substitute: {req.substituteName}
+                                  </p>
+                                )
+                              ) : (
                                 <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
-                                  Substitute: {req.substituteName}
+                                  No substitute required
                                 </p>
                               )}
                               {req.reason && (

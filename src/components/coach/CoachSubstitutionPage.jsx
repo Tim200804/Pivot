@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, Send, Loader2, AlertCircle, CheckCircle2, XCircle, Clock,
   Calendar, UserCheck, UserX, MessageCircle, ChevronDown, ChevronUp,
+  HelpCircle,
 } from 'lucide-react'
 import { useUser } from '../../context/UserContext'
 import Sidebar from '../ui/Sidebar'
@@ -19,6 +20,9 @@ const statusMeta = {
   pending_teammate: { label: 'Waiting for teammate', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', icon: Clock },
   teammate_accepted: { label: 'Teammate accepted — needs your approval', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', icon: CheckCircle2 },
   teammate_rejected: { label: 'Teammate declined', color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/20', icon: XCircle },
+  pending_requester: { label: 'Waiting for athlete confirmation', color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/20', icon: HelpCircle },
+  requester_approved: { label: 'Athlete confirmed — needs your approval', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', icon: CheckCircle2 },
+  pending_coach: { label: 'Needs your approval', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', icon: Clock },
   coach_approved: { label: 'Approved', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2 },
   coach_rejected: { label: 'Rejected', color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/20', icon: XCircle },
 }
@@ -30,7 +34,7 @@ export default function CoachSubstitutionPage() {
   const [athletes, setAthletes] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({ athleteId: '', substituteId: '', trainingDate: '', reason: '' })
+  const [form, setForm] = useState({ athleteId: '', substituteId: '', trainingDate: '', reason: '', needsSubstitute: true })
   const [candidates, setCandidates] = useState([])
   const [expanded, setExpanded] = useState(null)
   const [error, setError] = useState('')
@@ -107,16 +111,22 @@ export default function CoachSubstitutionPage() {
     e.preventDefault()
     setError('')
     setSuccess('')
-    if (!form.athleteId || !form.substituteId || !form.trainingDate) {
-      setError('Please select athlete, substitute, and training date')
+    if (!form.athleteId || !form.trainingDate) {
+      setError('Please select athlete and training date')
+      return
+    }
+    if (form.needsSubstitute && !form.substituteId) {
+      setError('Please select a substitute or uncheck "Need a substitute"')
       return
     }
     setSubmitting(true)
     try {
       const res = await apiCoachInitiateSubstitution(form)
       if (res.success) {
-        setSuccess('Substitution request initiated and sent to teammate')
-        setForm({ athleteId: '', substituteId: '', trainingDate: '', reason: '' })
+        setSuccess(form.needsSubstitute
+          ? 'Substitution request initiated and sent to athlete for confirmation'
+          : 'Leave request initiated and sent to athlete for confirmation')
+        setForm({ athleteId: '', substituteId: '', trainingDate: '', reason: '', needsSubstitute: true })
         await load()
         setTab('requests')
       } else {
@@ -204,7 +214,7 @@ export default function CoachSubstitutionPage() {
                   {requests.map(req => {
                     const meta = statusMeta[req.status] || statusMeta.pending_teammate
                     const Icon = meta.icon
-                    const canApprove = req.status === 'teammate_accepted'
+                    const canApprove = req.status === 'teammate_accepted' || req.status === 'pending_coach'
                     const isExpanded = expanded === req.id
                     return (
                       <div
@@ -212,23 +222,34 @@ export default function CoachSubstitutionPage() {
                         className="p-4 rounded-xl border border-pivot-100 dark:border-slate-700 bg-white dark:bg-slate-800"
                       >
                         <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="text-sm font-semibold text-pivot-900 dark:text-white">
                                 {req.requesterName}
                               </p>
-                              <span className="text-xs text-pivot-400">→</span>
-                              <p className="text-sm font-semibold text-pivot-900 dark:text-white">
-                                {req.substituteName || '—'}
-                              </p>
+                              {req.needsSubstitute ? (
+                                <>
+                                  <span className="text-xs text-pivot-400">→</span>
+                                  <p className="text-sm font-semibold text-pivot-900 dark:text-white">
+                                    {req.substituteName || '—'}
+                                  </p>
+                                </>
+                              ) : (
+                                <span className="text-xs text-pivot-400">(no substitute)</span>
+                              )}
                             </div>
                             <p className="text-xs text-pivot-500 dark:text-slate-400 mt-1">
                               {req.position} · {req.trainingDate}
                             </p>
-                            <span className={`inline-flex items-center gap-1.5 mt-2 px-2 py-0.5 rounded-md text-[10px] font-bold ${meta.color}`}>
-                              <Icon size={12} />
-                              {meta.label}
-                            </span>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold ${meta.color}`}>
+                                <Icon size={12} />
+                                {meta.label}
+                              </span>
+                              <span className="text-[10px] text-pivot-400">
+                                {req.initiatedBy === 'coach' ? 'Coach initiated' : 'Athlete initiated'}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             {canApprove ? (
@@ -272,6 +293,7 @@ export default function CoachSubstitutionPage() {
                               className="overflow-hidden"
                             >
                               <div className="pt-3 mt-3 border-t border-pivot-100 dark:border-slate-700 text-xs text-pivot-500 dark:text-slate-400 space-y-1">
+                                <p>Substitute required: {req.needsSubstitute ? 'Yes' : 'No'}</p>
                                 <p>Reason: {req.reason || '—'}</p>
                                 {req.responseNote && <p>Teammate note: {req.responseNote}</p>}
                                 {req.coachNote && <p>Coach note: {req.coachNote}</p>}
@@ -337,43 +359,60 @@ export default function CoachSubstitutionPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
-                    Substitute <span className="text-red-400">*</span>
-                  </label>
-                  {form.athleteId && candidates.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-sm flex items-start gap-2">
-                      <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                      <div>
-                        <p>No substitute available for {selectedAthlete?.position || 'this position'}.</p>
-                        <button
-                          type="button"
-                          onClick={() => handleSendMessage(form.athleteId)}
-                          disabled={submitting}
-                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-blue text-white text-xs font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50"
-                        >
-                          {submitting ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
-                          Send AI support message
-                        </button>
+                <label className="flex items-center gap-3 p-3 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 cursor-pointer transition-all hover:border-accent-blue/50">
+                  <input
+                    type="checkbox"
+                    checked={form.needsSubstitute}
+                    onChange={e => setForm(prev => ({ ...prev, needsSubstitute: e.target.checked, substituteId: e.target.checked ? prev.substituteId : '' }))}
+                    className="accent-accent-blue w-4 h-4"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-pivot-900 dark:text-white">Need a substitute</p>
+                    <p className="text-xs text-pivot-500 dark:text-slate-400">
+                      Uncheck if this training item does not require a replacement.
+                    </p>
+                  </div>
+                </label>
+
+                {form.needsSubstitute && (
+                  <div>
+                    <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
+                      Substitute <span className="text-red-400">*</span>
+                    </label>
+                    {form.athleteId && candidates.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 text-sm flex items-start gap-2">
+                        <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                        <div>
+                          <p>No substitute available for {selectedAthlete?.position || 'this position'}.</p>
+                          <button
+                            type="button"
+                            onClick={() => handleSendMessage(form.athleteId)}
+                            disabled={submitting}
+                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-blue text-white text-xs font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50"
+                          >
+                            {submitting ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+                            Send AI support message
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <select
-                      required
-                      value={form.substituteId}
-                      onChange={e => setForm(prev => ({ ...prev, substituteId: e.target.value }))}
-                      disabled={!form.athleteId}
-                      className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none disabled:opacity-50"
-                    >
-                      <option value="">{form.athleteId ? 'Select a substitute' : 'Select an athlete first'}</option>
-                      {candidates.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} — {c.position}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                    ) : (
+                      <select
+                        required
+                        value={form.substituteId}
+                        onChange={e => setForm(prev => ({ ...prev, substituteId: e.target.value }))}
+                        disabled={!form.athleteId}
+                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none disabled:opacity-50"
+                      >
+                        <option value="">{form.athleteId ? 'Select a substitute' : 'Select an athlete first'}</option>
+                        {candidates.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} — {c.position}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-pivot-700 dark:text-slate-300 mb-1.5">
@@ -390,7 +429,7 @@ export default function CoachSubstitutionPage() {
 
                 <button
                   type="submit"
-                  disabled={submitting || !form.substituteId}
+                  disabled={submitting || (form.needsSubstitute && !form.substituteId)}
                   className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {submitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
