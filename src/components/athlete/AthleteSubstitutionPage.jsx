@@ -119,21 +119,21 @@ export default function AthleteSubstitutionPage() {
             <div className="flex gap-2 mb-6">
               {[
                 { key: 'request', label: 'Request Substitution' },
-                { key: 'list', label: `My Requests ${myRequests.length > 0 ? `(${myRequests.length})` : ''}` },
+                { key: 'list', label: `Overview ${myRequests.length + incomingRequests.length > 0 ? `(${myRequests.length + incomingRequests.length})` : ''}` },
               ].map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                tab === t.key
-                  ? 'bg-accent-blue text-white shadow-lg shadow-blue-500/20'
-                  : 'bg-white dark:bg-slate-800 text-pivot-600 dark:text-slate-300 hover:bg-pivot-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                    tab === t.key
+                      ? 'bg-accent-blue text-white shadow-lg shadow-blue-500/20'
+                      : 'bg-white dark:bg-slate-800 text-pivot-600 dark:text-slate-300 hover:bg-pivot-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
 
         {error && (
           <div className="mb-4 p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-sm flex items-start gap-2">
