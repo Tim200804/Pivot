@@ -296,6 +296,13 @@ export default function AthleteSubstitutionPage() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
+              {loading ? (
+                <div className="glass-card p-8 flex flex-col items-center justify-center gap-3 text-sm text-pivot-500 dark:text-slate-400">
+                  <Loader2 size={24} className="animate-spin text-accent-blue" />
+                  Loading substitution requests...
+                </div>
+              ) : (
+                <>
               {pendingConfirmation.length > 0 && (
                 <div className="glass-card p-6 border-l-4 border-violet-400">
                   <h2 className="text-lg font-bold text-pivot-900 dark:text-white mb-4 flex items-center gap-2">
@@ -483,6 +490,8 @@ export default function AthleteSubstitutionPage() {
                   </div>
                 )}
               </div>
+              </>
+            )}
             </motion.div>
           )}
         </AnimatePresence>
