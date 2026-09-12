@@ -48,6 +48,26 @@ export default function ConversationModal({ otherUser, onClose }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow
+    const originalPaddingRight = document.body.style.paddingRight
+    const originalTouchAction = document.body.style.touchAction
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+
+    document.body.style.overflow = 'hidden'
+    document.body.style.touchAction = 'none'
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow
+      document.body.style.paddingRight = originalPaddingRight
+      document.body.style.touchAction = originalTouchAction
+    }
+  }, [])
+
   const handleSend = async () => {
     const text = body.trim()
     if (!text || sending || !otherUser?.id) return
@@ -89,6 +109,7 @@ export default function ConversationModal({ otherUser, onClose }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
+      onTouchMove={(e) => e.preventDefault()}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
     >
       <motion.div
@@ -122,7 +143,7 @@ export default function ConversationModal({ otherUser, onClose }) {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar min-h-[300px]">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3 custom-scrollbar min-h-[300px]">
           {loading ? (
             <div className="h-full flex items-center justify-center">
               <Loader2 size={24} className="text-accent-blue animate-spin" />
