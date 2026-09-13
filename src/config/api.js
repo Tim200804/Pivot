@@ -16,7 +16,7 @@
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || (import.meta.env.PROD ? 'real' : 'mock')
 
 /** Production Flask backend — auth/data fallback only (not used for local AI) */
-const DEFAULT_BACKEND_URL = 'https://pivot-backend-production-690b.up.railway.app'
+const DEFAULT_BACKEND_URL = 'https://api.pivotteam.online'
 
 /** Local Flask — proxies AI to https://api.moonshot.cn/v1/chat/completions */
 const LOCAL_AI_BACKEND_URL = 'http://localhost:5000'
