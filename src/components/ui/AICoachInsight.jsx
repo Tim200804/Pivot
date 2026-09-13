@@ -169,11 +169,6 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin, deferIni
             <h3 className="text-sm font-semibold text-pivot-700 dark:text-slate-300">
               AI Coach Insight
             </h3>
-            {messages.some(m => m.role === 'assistant' && m.isDemo) && (
-              <span className="text-[10px] font-medium bg-violet-100 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-full">
-                Offline fallback
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -233,11 +228,6 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin, deferIni
                   <p className="text-sm text-pivot-600 dark:text-slate-300 leading-relaxed">
                     {lastInsight}
                   </p>
-                  {messages[0]?.isDemo && (
-                    <p className="text-[10px] text-pivot-400 dark:text-slate-500 italic">
-                      (AI API unavailable — showing fallback insight)
-                    </p>
-                  )}
                 </>
               )}
             </motion.div>
@@ -285,11 +275,6 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin, deferIni
                           {msg.text}
                           {msg.role === 'assistant' && msg.streaming && (
                             <span className="inline-block w-1.5 h-3.5 ml-0.5 align-middle bg-violet-400 animate-pulse" />
-                          )}
-                          {msg.role === 'assistant' && msg.isDemo && (
-                            <span className="block mt-1 text-[10px] opacity-60 italic">
-                              (Offline fallback)
-                            </span>
                           )}
                         </div>
                       </motion.div>
@@ -353,9 +338,7 @@ const AICoachInsight = memo(function AICoachInsight({ athlete, checkin, deferIni
                 {/* Footer actions */}
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[10px] text-pivot-400 dark:text-slate-500">
-                    {messages.some(m => m.role === 'assistant' && m.isDemo)
-                      ? 'AI unavailable — showing rule-based fallback'
-                      : 'Powered by Kimi AI · Conversations are private'}
+                    Powered by Kimi AI · Conversations are private
                   </span>
                   <button
                     onClick={handleClear}
