@@ -10,7 +10,7 @@
  *   VITE_AUTH_MODE=real   -> npm run dev:real
  *
  * Online deployment: set your backend URL in localStorage:
- *   localStorage.setItem('pivot_api_url', 'https://your-app.onrender.com')
+ *   localStorage.setItem('pivot_api_url', 'https://api.pivotteam.online')
  */
 
 const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || (import.meta.env.PROD ? 'real' : 'mock')
@@ -28,12 +28,12 @@ function normalizeBaseUrl(url) {
 
 function isFrontendHost(url) {
   const u = (url || '').toLowerCase()
-  return u.includes('codebuddy.work') || u.includes('localhost:5173') || u.includes('127.0.0.1:5173')
+  return u.includes('codebuddy.work') || u.includes('pivotteam.online') || u.includes('localhost:5173') || u.includes('127.0.0.1:5173')
 }
 
 function isRemoteDeployedBackend(url) {
   const u = (url || '').toLowerCase()
-  return u.includes('railway.app') || u.includes('onrender.com') || u.includes('codebuddy.work')
+  return u.includes('railway.app') || u.includes('onrender.com') || u.includes('codebuddy.work') || u.includes('pivotteam.online')
 }
 
 // Priority: 1) localStorage override  2) env var  3) dev proxy  4) production backend
