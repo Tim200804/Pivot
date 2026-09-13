@@ -1,0 +1,3 @@
+# SPA fallback — send every path to index.html so React Router handles client-side routing.
+# Works on Cloudflare Pages and Netlify.
+/*    /index.html   200
