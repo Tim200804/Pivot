@@ -439,6 +439,37 @@ export async function apiImportHealthMetrics({ userId, rows }) {
   })
 }
 
+export async function apiImportHealthMetricsFromImage({ userId, imageFile, preview = false }) {
+  const url = `${getApiBaseUrl()}/api/health/import-from-image${preview ? '?preview=1' : ''}`
+  const token = localStorage.getItem('pivot_token')
+  const formData = new FormData()
+  if (userId) {
+    formData.append('user_id', String(userId))
+  }
+  formData.append('image', imageFile)
+
+  const headers = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+    headers,
+  })
+
+  const data = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = data?.message || `HTTP ${response.status}`
+    const err = new Error(message)
+    err.status = response.status
+    err.data = data
+    throw err
+  }
+  return data
+}
+
 /* ─── Substitution / leave request API ─── */
 
 export async function apiListSubstitutionRequests() {

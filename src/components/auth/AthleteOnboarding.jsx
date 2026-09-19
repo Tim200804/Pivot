@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Watch, Heart, Activity, Moon, ArrowRight, CheckCircle2, Smartphone,
   ShieldCheck, Upload, FileSpreadsheet, AlertTriangle, Download, X,
+  Camera, Image as ImageIcon,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../../context/UserContext'
-import { apiSubmitCheckin, apiImportHealthMetrics } from '../../config/api'
+import { apiSubmitCheckin, apiImportHealthMetrics, apiImportHealthMetricsFromImage } from '../../config/api'
 import * as XLSX from 'xlsx'
 
 const slide = {
@@ -161,6 +162,17 @@ export default function AthleteOnboarding({ onComplete }) {
   const fileInputRef = useRef(null)
   const dragDepthRef = useRef(0)
 
+  // Screenshot import state
+  const [importMode, setImportMode] = useState('spreadsheet')
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null)
+  const [imageParsing, setImageParsing] = useState(false)
+  const [imageImporting, setImageImporting] = useState(false)
+  const [imageParsedRows, setImageParsedRows] = useState(null)
+  const [imageImportCount, setImageImportCount] = useState(0)
+  const [imageImportErrors, setImageImportErrors] = useState([])
+  const imageInputRef = useRef(null)
+
   const navigate = useNavigate()
 
   const currentStepIndex = steps.indexOf(step)
@@ -243,6 +255,71 @@ export default function AthleteOnboarding({ onComplete }) {
     processImportFile(file)
   }
 
+  const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/heic', 'image/heif']
+
+  const isAcceptedImageFile = (file) => {
+    if (!file?.type) return false
+    return ACCEPTED_IMAGE_TYPES.includes(file.type.toLowerCase())
+  }
+
+  const resetImageImport = useCallback(() => {
+    setImageFile(null)
+    setImagePreviewUrl(null)
+    setImageParsedRows(null)
+    setImageImportCount(0)
+    setImageImportErrors([])
+    if (imageInputRef.current) imageInputRef.current.value = ''
+  }, [])
+
+  const processImageFile = useCallback(async (file) => {
+    if (!file) return
+    if (!isAcceptedImageFile(file)) {
+      setInvalidFileModal({
+        name: file.name,
+        ext: getFileExtension(file.name) || file.type,
+      })
+      return
+    }
+
+    resetImageImport()
+    setImageFile(file)
+    setImagePreviewUrl(URL.createObjectURL(file))
+    setImageParsing(true)
+    setImageImportErrors([])
+    setImageParsedRows(null)
+
+    try {
+      const res = await apiImportHealthMetricsFromImage({ imageFile: file, preview: true })
+      if (res.success && res.rows?.length > 0) {
+        setImageParsedRows(res.rows)
+        setImageImportCount(res.rows.length)
+      } else if (res.success && (!res.rows || res.rows.length === 0)) {
+        setImageImportErrors(['No usable health data found in the image. Please try a clearer screenshot.'])
+      } else {
+        setImageImportErrors([res.message || 'Failed to parse image'])
+      }
+    } catch (err) {
+      setImageImportErrors([err.message || 'Failed to parse screenshot. Please try again.'])
+    } finally {
+      setImageParsing(false)
+    }
+  }, [resetImageImport])
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) processImageFile(file)
+    e.target.value = ''
+  }
+
+  const handleImageDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current = 0
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) processImageFile(file)
+  }
+
   const handleConnect = () => {
     setConnecting(true)
     setTimeout(() => {
@@ -258,20 +335,45 @@ export default function AthleteOnboarding({ onComplete }) {
   }
 
   const handleContinueToCheckin = async () => {
-    const importedRows = localStorage.getItem('pivot_imported_health')
-    const rows = importedRows ? JSON.parse(importedRows) : []
-    if (Array.isArray(rows) && rows.length > 0) {
-      setImportUploading(true)
-      setImportErrors([])
-      try {
-        await apiImportHealthMetrics({ rows })
-        setImportUploading(false)
-      } catch (err) {
-        setImportUploading(false)
-        setImportErrors([err.message || 'Failed to upload imported health data. You can retry or continue without it.'])
+    // Spreadsheet mode: upload validated rows from localStorage
+    if (importMode === 'spreadsheet') {
+      const importedRows = localStorage.getItem('pivot_imported_health')
+      const rows = importedRows ? JSON.parse(importedRows) : []
+      if (Array.isArray(rows) && rows.length > 0) {
+        setImportUploading(true)
+        setImportErrors([])
+        try {
+          await apiImportHealthMetrics({ rows })
+          setImportUploading(false)
+        } catch (err) {
+          setImportUploading(false)
+          setImportErrors([err.message || 'Failed to upload imported health data. You can retry or continue without it.'])
+          return
+        }
+      }
+      setStep('checkin')
+      return
+    }
+
+    // Screenshot mode: save parsed rows to backend
+    if (importMode === 'screenshot') {
+      if (!imageFile || !imageParsedRows || imageParsedRows.length === 0) {
+        setImageImportErrors(['Please upload a screenshot with readable health data first.'])
         return
       }
+      setImageImporting(true)
+      setImageImportErrors([])
+      try {
+        await apiImportHealthMetricsFromImage({ imageFile, preview: false })
+        setImageImporting(false)
+        setStep('checkin')
+      } catch (err) {
+        setImageImporting(false)
+        setImageImportErrors([err.message || 'Failed to save screenshot data. You can retry or continue without it.'])
+      }
+      return
     }
+
     setStep('checkin')
   }
 
@@ -424,107 +526,245 @@ export default function AthleteOnboarding({ onComplete }) {
           {!ENABLE_APPLE_HEALTH && step === 'import' && (
             <motion.div key="import" variants={slide} initial="initial" animate="animate" exit="exit" className="glass-card p-8 text-center">
               <div className="w-20 h-20 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center mx-auto mb-5">
-                <FileSpreadsheet size={36} className="text-accent-blue" />
+                {importMode === 'screenshot' ? <Camera size={36} className="text-accent-blue" /> : <FileSpreadsheet size={36} className="text-accent-blue" />}
               </div>
               <h2 className="text-xl font-bold text-pivot-900 dark:text-white mb-2">Import Your Health Data</h2>
               <p className="text-sm text-pivot-500 dark:text-slate-400 mb-6 leading-relaxed">
-                Apple Health requires an Apple-certified integration, so Pivot accepts a spreadsheet upload instead.
-                Your daily check-in still follows this step.
+                Upload a spreadsheet or take a screenshot of your wearable/fitness app. Pivot will read the numbers and save them for you.
               </p>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5 p-4 rounded-xl bg-pivot-50 dark:bg-slate-800/50 text-left">
-                <div className="text-xs text-pivot-600 dark:text-slate-300">
-                  <p className="font-semibold mb-1">Download the import template</p>
-                  <p className="text-[10px] text-pivot-400 leading-relaxed">
-                    Includes sample rows for {REQUIRED_COLUMNS.join(', ')}. Accepted formats: {ACCEPTED_FORMATS_LABEL}
-                  </p>
-                </div>
+              {/* Mode toggle */}
+              <div className="flex items-center justify-center gap-1 mb-6 p-1 rounded-xl bg-pivot-50 dark:bg-slate-800/50">
                 <button
                   type="button"
-                  onClick={downloadHealthTemplate}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-pivot-200 dark:border-slate-600 text-xs font-semibold text-accent-blue hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shrink-0"
+                  onClick={() => setImportMode('spreadsheet')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    importMode === 'spreadsheet'
+                      ? 'bg-white dark:bg-slate-700 text-accent-blue shadow-sm'
+                      : 'text-pivot-500 dark:text-slate-400 hover:text-pivot-700 dark:hover:text-slate-200'
+                  }`}
                 >
-                  <Download size={14} />
-                  Download template
+                  <FileSpreadsheet size={14} />
+                  Spreadsheet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportMode('screenshot')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    importMode === 'screenshot'
+                      ? 'bg-white dark:bg-slate-700 text-accent-blue shadow-sm'
+                      : 'text-pivot-500 dark:text-slate-400 hover:text-pivot-700 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Camera size={14} />
+                  Screenshot
                 </button>
               </div>
 
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    fileInputRef.current?.click()
-                  }
-                }}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                className={`group relative flex flex-col items-center justify-center w-full py-8 mb-4 border-2 border-dashed rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40 ${
-                  isDragging
-                    ? 'border-accent-blue bg-blue-50/60 dark:bg-blue-900/20 scale-[1.01]'
-                    : 'border-pivot-200 dark:border-slate-600 hover:border-accent-blue/60 hover:bg-blue-50/30 dark:hover:bg-blue-900/10'
-                }`}
-              >
-                <Upload size={28} className={`mb-2 transition-colors ${isDragging ? 'text-accent-blue' : 'text-pivot-400 group-hover:text-accent-blue'}`} />
-                <span className="text-sm text-pivot-600 dark:text-slate-300">
-                  {isDragging
-                    ? 'Drop your file here'
-                    : importFile
-                      ? importFile.name
-                      : 'Drag & drop or click to upload'}
-                </span>
-                <span className="text-[10px] text-pivot-400 mt-1">{ACCEPTED_FORMATS_LABEL}</span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </div>
+              {importMode === 'spreadsheet' && (
+                <>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5 p-4 rounded-xl bg-pivot-50 dark:bg-slate-800/50 text-left">
+                    <div className="text-xs text-pivot-600 dark:text-slate-300">
+                      <p className="font-semibold mb-1">Download the import template</p>
+                      <p className="text-[10px] text-pivot-400 leading-relaxed">
+                        Includes sample rows for {REQUIRED_COLUMNS.join(', ')}. Accepted formats: {ACCEPTED_FORMATS_LABEL}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={downloadHealthTemplate}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-pivot-200 dark:border-slate-600 text-xs font-semibold text-accent-blue hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shrink-0"
+                    >
+                      <Download size={14} />
+                      Download template
+                    </button>
+                  </div>
 
-              {importing && (
-                <div className="flex items-center justify-center gap-2 mb-4 text-xs text-pivot-500">
-                  <span className="w-4 h-4 border-2 border-pivot-300 border-t-accent-blue rounded-full animate-spin" />
-                  Validating your data…
-                </div>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => fileInputRef.current?.click()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        fileInputRef.current?.click()
+                      }
+                    }}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    className={`group relative flex flex-col items-center justify-center w-full py-8 mb-4 border-2 border-dashed rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40 ${
+                      isDragging
+                        ? 'border-accent-blue bg-blue-50/60 dark:bg-blue-900/20 scale-[1.01]'
+                        : 'border-pivot-200 dark:border-slate-600 hover:border-accent-blue/60 hover:bg-blue-50/30 dark:hover:bg-blue-900/10'
+                    }`}
+                  >
+                    <Upload size={28} className={`mb-2 transition-colors ${isDragging ? 'text-accent-blue' : 'text-pivot-400 group-hover:text-accent-blue'}`} />
+                    <span className="text-sm text-pivot-600 dark:text-slate-300">
+                      {isDragging
+                        ? 'Drop your file here'
+                        : importFile
+                          ? importFile.name
+                          : 'Drag & drop or click to upload'}
+                    </span>
+                    <span className="text-[10px] text-pivot-400 mt-1">{ACCEPTED_FORMATS_LABEL}</span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                  </div>
+
+                  {importing && (
+                    <div className="flex items-center justify-center gap-2 mb-4 text-xs text-pivot-500">
+                      <span className="w-4 h-4 border-2 border-pivot-300 border-t-accent-blue rounded-full animate-spin" />
+                      Validating your data…
+                    </div>
+                  )}
+
+                  {importErrors.length > 0 && (
+                    <div className="text-left mb-5 p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs">
+                      <div className="flex items-center gap-1.5 font-semibold mb-2">
+                        <AlertTriangle size={14} /> Validation failed
+                      </div>
+                      <ul className="list-disc pl-4 space-y-1 max-h-32 overflow-y-auto">
+                        {importErrors.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {imported && (
+                    <div className="mb-5 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs">
+                      <div className="flex items-center gap-1.5 font-semibold mb-1">
+                        <CheckCircle2 size={14} /> Import validated
+                      </div>
+                      <p>{importCount} row{importCount === 1 ? '' : 's'} ready to use.</p>
+                    </div>
+                  )}
+                </>
               )}
 
-              {importErrors.length > 0 && (
-                <div className="text-left mb-5 p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs">
-                  <div className="flex items-center gap-1.5 font-semibold mb-2">
-                    <AlertTriangle size={14} /> Validation failed
+              {importMode === 'screenshot' && (
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => imageInputRef.current?.click()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        imageInputRef.current?.click()
+                      }
+                    }}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={handleDragOver}
+                    onDrop={handleImageDrop}
+                    className={`group relative flex flex-col items-center justify-center w-full py-8 mb-4 border-2 border-dashed rounded-xl cursor-pointer transition-all outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40 ${
+                      isDragging
+                        ? 'border-accent-blue bg-blue-50/60 dark:bg-blue-900/20 scale-[1.01]'
+                        : 'border-pivot-200 dark:border-slate-600 hover:border-accent-blue/60 hover:bg-blue-50/30 dark:hover:bg-blue-900/10'
+                    }`}
+                  >
+                    <ImageIcon size={28} className={`mb-2 transition-colors ${isDragging ? 'text-accent-blue' : 'text-pivot-400 group-hover:text-accent-blue'}`} />
+                    <span className="text-sm text-pivot-600 dark:text-slate-300">
+                      {isDragging
+                        ? 'Drop screenshot here'
+                        : imageFile
+                          ? imageFile.name
+                          : 'Drag & drop or click to upload screenshot'}
+                    </span>
+                    <span className="text-[10px] text-pivot-400 mt-1">PNG, JPG, WebP, HEIC</span>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+                      className="hidden"
+                      onChange={handleImageChange}
+                    />
                   </div>
-                  <ul className="list-disc pl-4 space-y-1 max-h-32 overflow-y-auto">
-                    {importErrors.map((e, i) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
-              {imported && (
-                <div className="mb-5 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs">
-                  <div className="flex items-center gap-1.5 font-semibold mb-1">
-                    <CheckCircle2 size={14} /> Import validated
-                  </div>
-                  <p>{importCount} row{importCount === 1 ? '' : 's'} ready to use.</p>
-                </div>
+                  {imagePreviewUrl && (
+                    <div className="mb-4 rounded-xl border border-pivot-200 dark:border-slate-600 overflow-hidden bg-pivot-50 dark:bg-slate-800/50">
+                      <img
+                        src={imagePreviewUrl}
+                        alt="Uploaded screenshot preview"
+                        className="max-h-48 w-full object-contain mx-auto"
+                      />
+                    </div>
+                  )}
+
+                  {imageParsing && (
+                    <div className="flex items-center justify-center gap-2 mb-4 text-xs text-pivot-500">
+                      <span className="w-4 h-4 border-2 border-pivot-300 border-t-accent-blue rounded-full animate-spin" />
+                      Reading numbers from screenshot…
+                    </div>
+                  )}
+
+                  {imageImportErrors.length > 0 && (
+                    <div className="text-left mb-5 p-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs">
+                      <div className="flex items-center gap-1.5 font-semibold mb-2">
+                        <AlertTriangle size={14} /> Could not read screenshot
+                      </div>
+                      <ul className="list-disc pl-4 space-y-1 max-h-32 overflow-y-auto">
+                        {imageImportErrors.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {imageParsedRows && imageParsedRows.length > 0 && (
+                    <div className="mb-5 rounded-xl border border-pivot-200 dark:border-slate-600 overflow-hidden bg-pivot-50 dark:bg-slate-800/50 text-left">
+                      <div className="px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border-b border-pivot-200 dark:border-slate-600">
+                        <div className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300 text-xs">
+                          <CheckCircle2 size={14} /> {imageImportCount} row{imageImportCount === 1 ? '' : 's'} found
+                        </div>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        <table className="w-full text-[10px]">
+                          <thead className="sticky top-0 bg-pivot-100 dark:bg-slate-700 text-pivot-600 dark:text-slate-300">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold">Date</th>
+                              <th className="px-3 py-2 text-right font-semibold">HRV</th>
+                              <th className="px-3 py-2 text-right font-semibold">RHR</th>
+                              <th className="px-3 py-2 text-right font-semibold">Sleep</th>
+                            </tr>
+                          </thead>
+                          <tbody className="text-pivot-700 dark:text-slate-200">
+                            {imageParsedRows.map((row, idx) => (
+                              <tr key={idx} className="border-t border-pivot-200 dark:border-slate-600">
+                                <td className="px-3 py-2">{row.date}</td>
+                                <td className="px-3 py-2 text-right">{row.hrv ?? '-'}</td>
+                                <td className="px-3 py-2 text-right">{row.rhr ?? '-'}</td>
+                                <td className="px-3 py-2 text-right">{row.sleepHours ?? '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <button
                 onClick={handleContinueToCheckin}
-                disabled={!imported || importUploading}
+                disabled={
+                  (importMode === 'spreadsheet' && (!imported || importUploading)) ||
+                  (importMode === 'screenshot' && (imageParsing || imageImporting))
+                }
                 className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {importUploading ? (
+                {importUploading || imageImporting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Uploading health data…
+                    {imageImporting ? 'Saving screenshot data…' : 'Uploading health data…'}
                   </>
                 ) : (
                   <>Continue to Check-in <ArrowRight size={16} /></>
@@ -705,7 +945,9 @@ export default function AthleteOnboarding({ onComplete }) {
                   {' '}cannot be imported.
                 </p>
                 <p className="text-xs text-pivot-500 dark:text-slate-400 mb-5">
-                  Please upload a spreadsheet in one of these formats: {ACCEPTED_FORMATS_LABEL}
+                  {importMode === 'screenshot'
+                    ? 'Please upload an image: PNG, JPG, WebP, or HEIC.'
+                    : `Please upload a spreadsheet in one of these formats: ${ACCEPTED_FORMATS_LABEL}`}
                 </p>
                 <button
                   type="button"
