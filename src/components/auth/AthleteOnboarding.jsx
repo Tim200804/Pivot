@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Watch, Heart, Activity, Moon, ArrowRight, CheckCircle2, Smartphone,
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../../context/UserContext'
-import { apiSubmitCheckin, apiImportHealthMetrics, apiImportHealthMetricsFromImage, apiSubmitManualHealthMetric, apiGetMyHealthMetrics } from '../../config/api'
+import { apiSubmitCheckin, apiImportHealthMetrics, apiImportHealthMetricsFromImage, apiSubmitManualHealthMetric, apiGetMyHealthMetrics, apiGetMyHealthMetricsForDate } from '../../config/api'
 import * as XLSX from 'xlsx'
 
 const slide = {
@@ -175,14 +175,16 @@ export default function AthleteOnboarding({ onComplete }) {
 
   // Manual entry state
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0])
-  const [manualMetric, setManualMetric] = useState('hrv')
-  const [manualValue, setManualValue] = useState('')
+  const [manualHrv, setManualHrv] = useState('')
+  const [manualRhr, setManualRhr] = useState('')
+  const [manualSleepHours, setManualSleepHours] = useState('')
   const [manualSubmitting, setManualSubmitting] = useState(false)
   const [manualErrors, setManualErrors] = useState([])
   const [manualSuccess, setManualSuccess] = useState('')
   const [manualHistory, setManualHistory] = useState([])
   const [manualHistoryLoading, setManualHistoryLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [manualDateLoading, setManualDateLoading] = useState(false)
 
   const navigate = useNavigate()
 
@@ -409,6 +411,33 @@ export default function AthleteOnboarding({ onComplete }) {
     }
   }, [user?.id])
 
+  const fillManualFormFromMetric = (metric) => {
+    if (!metric) return
+    const toStr = (v) => (v === null || v === undefined || v === '' ? '' : String(v))
+    setManualHrv(toStr(metric.hrv))
+    setManualRhr(toStr(metric.rhr))
+    setManualSleepHours(toStr(metric.sleepHours))
+  }
+
+  const fetchExistingForDate = useCallback(async (date) => {
+    if (!user?.id || !date) return
+    setManualDateLoading(true)
+    try {
+      const res = await apiGetMyHealthMetricsForDate(date)
+      if (res.success && res.metric) {
+        fillManualFormFromMetric(res.metric)
+      }
+    } catch (err) {
+      // silent fail; leave form values as-is
+    } finally {
+      setManualDateLoading(false)
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    fetchExistingForDate(manualDate)
+  }, [manualDate, fetchExistingForDate])
+
   const validateManualForm = () => {
     const errors = []
     if (!manualDate) {
@@ -416,13 +445,24 @@ export default function AthleteOnboarding({ onComplete }) {
     } else if (manualDate > todayStr) {
       errors.push('Date cannot be in the future.')
     }
-    if (!manualMetric || !['hrv', 'rhr', 'sleepHours'].includes(manualMetric)) {
-      errors.push('Please select a valid metric.')
+    const hasValue =
+      (manualHrv !== '' && !Number.isNaN(Number(manualHrv))) ||
+      (manualRhr !== '' && !Number.isNaN(Number(manualRhr))) ||
+      (manualSleepHours !== '' && !Number.isNaN(Number(manualSleepHours)))
+    if (!hasValue) {
+      errors.push('Please enter at least one metric.')
+      return errors
     }
-    const num = Number(manualValue)
-    if (manualValue === '' || Number.isNaN(num) || num <= 0) {
-      errors.push('Value must be a positive number.')
+    const validateField = (value, name) => {
+      if (value === '' || value === null || value === undefined) return
+      const num = Number(value)
+      if (Number.isNaN(num) || num <= 0) {
+        errors.push(`${name} must be a positive number.`)
+      }
     }
+    validateField(manualHrv, 'HRV')
+    validateField(manualRhr, 'Resting heart rate')
+    validateField(manualSleepHours, 'Sleep hours')
     return errors
   }
 
@@ -439,11 +479,11 @@ export default function AthleteOnboarding({ onComplete }) {
     try {
       await apiSubmitManualHealthMetric({
         date: manualDate,
-        metricType: manualMetric,
-        value: Number(manualValue),
+        hrv: manualHrv === '' ? null : Number(manualHrv),
+        rhr: manualRhr === '' ? null : Number(manualRhr),
+        sleepHours: manualSleepHours === '' ? null : Number(manualSleepHours),
       })
       setManualSuccess('Saved successfully.')
-      setManualValue('')
       fetchManualHistory()
     } catch (err) {
       setManualErrors([err.message || 'Failed to save. Please try again.'])
@@ -609,7 +649,7 @@ export default function AthleteOnboarding({ onComplete }) {
               </div>
               <h2 className="text-xl font-bold text-pivot-900 dark:text-white mb-2">Import Your Health Data</h2>
               <p className="text-sm text-pivot-500 dark:text-slate-400 mb-6 leading-relaxed">
-                Upload a spreadsheet, take a screenshot, or enter one value at a time. Pivot will save it for you.
+                Upload a spreadsheet, take a screenshot, or enter today's metrics manually. Pivot will save it for you.
               </p>
 
               {/* Mode toggle */}
@@ -849,41 +889,63 @@ export default function AthleteOnboarding({ onComplete }) {
                   <form onSubmit={handleManualSubmit} className="text-left mb-5 space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Date</label>
-                      <input
-                        type="date"
-                        value={manualDate}
-                        max={todayStr}
-                        onChange={(e) => setManualDate(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
-                      />
+                      <div className="relative">
+                        <input
+                          type="date"
+                          value={manualDate}
+                          max={todayStr}
+                          onChange={(e) => setManualDate(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                        />
+                        {manualDateLoading && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-pivot-300 border-t-accent-blue rounded-full animate-spin" />
+                        )}
+                      </div>
                       <p className="text-[10px] text-pivot-400 mt-1">You can only select today or earlier dates.</p>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Metric</label>
-                      <select
-                        value={manualMetric}
-                        onChange={(e) => setManualMetric(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
-                      >
-                        <option value="hrv">HRV (ms)</option>
-                        <option value="rhr">Resting Heart Rate (bpm)</option>
-                        <option value="sleepHours">Sleep (hours)</option>
-                      </select>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">HRV (ms)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          value={manualHrv}
+                          onChange={(e) => setManualHrv(e.target.value)}
+                          placeholder="e.g. 58"
+                          className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Resting Heart Rate (bpm)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          value={manualRhr}
+                          onChange={(e) => setManualRhr(e.target.value)}
+                          placeholder="e.g. 54"
+                          className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Sleep (hours)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          value={manualSleepHours}
+                          onChange={(e) => setManualSleepHours(e.target.value)}
+                          placeholder="e.g. 7.2"
+                          className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Value</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        value={manualValue}
-                        onChange={(e) => setManualValue(e.target.value)}
-                        placeholder={`Enter ${manualMetric === 'hrv' ? 'HRV' : manualMetric === 'rhr' ? 'RHR' : 'sleep hours'}`}
-                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
-                      />
-                    </div>
+                    <p className="text-[10px] text-pivot-400 -mt-2">Enter one or more values. Existing values for this date will be overwritten.</p>
 
                     {manualErrors.length > 0 && (
                       <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
@@ -903,7 +965,7 @@ export default function AthleteOnboarding({ onComplete }) {
 
                     <button
                       type="submit"
-                      disabled={manualSubmitting}
+                      disabled={manualSubmitting || manualDateLoading}
                       className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
                     >
                       {manualSubmitting ? (

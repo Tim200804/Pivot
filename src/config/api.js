@@ -439,15 +439,19 @@ export async function apiImportHealthMetrics({ userId, rows }) {
   })
 }
 
-export async function apiSubmitManualHealthMetric({ date, metricType, value }) {
+export async function apiSubmitManualHealthMetric({ date, hrv, rhr, sleepHours }) {
   return apiFetch('/api/health/metrics/me', {
     method: 'POST',
-    body: JSON.stringify({ date, metricType, value }),
+    body: JSON.stringify({ date, hrv, rhr, sleepHours }),
   })
 }
 
 export async function apiGetMyHealthMetrics({ limit = 180 } = {}) {
   return apiFetch(`/api/health/metrics/me?limit=${limit}`, { method: 'GET' })
+}
+
+export async function apiGetMyHealthMetricsForDate(date) {
+  return apiFetch(`/api/health/metrics/me?date=${encodeURIComponent(date)}`, { method: 'GET' })
 }
 
 export async function apiImportHealthMetricsFromImage({ userId, imageFile, preview = false }) {
