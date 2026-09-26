@@ -966,6 +966,13 @@ export default function AthleteOnboarding({ onComplete }) {
                       )}
                     </div>
                   )}
+
+                  <button
+                    onClick={() => setStep('checkin')}
+                    className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    Continue to Check-in <ArrowRight size={16} />
+                  </button>
                 </>
               )}
 
