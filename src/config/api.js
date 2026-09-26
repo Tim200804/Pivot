@@ -439,6 +439,17 @@ export async function apiImportHealthMetrics({ userId, rows }) {
   })
 }
 
+export async function apiSubmitManualHealthMetric({ date, metricType, value }) {
+  return apiFetch('/api/health/metrics/me', {
+    method: 'POST',
+    body: JSON.stringify({ date, metricType, value }),
+  })
+}
+
+export async function apiGetMyHealthMetrics({ limit = 180 } = {}) {
+  return apiFetch(`/api/health/metrics/me?limit=${limit}`, { method: 'GET' })
+}
+
 export async function apiImportHealthMetricsFromImage({ userId, imageFile, preview = false }) {
   const url = `${getApiBaseUrl()}/api/health/import-from-image${preview ? '?preview=1' : ''}`
   const token = localStorage.getItem('pivot_token')

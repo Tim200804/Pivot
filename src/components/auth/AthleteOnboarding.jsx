@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Watch, Heart, Activity, Moon, ArrowRight, CheckCircle2, Smartphone,
   ShieldCheck, Upload, FileSpreadsheet, AlertTriangle, Download, X,
-  Camera, Image as ImageIcon,
+  Camera, Image as ImageIcon, Pencil, History,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../../context/UserContext'
-import { apiSubmitCheckin, apiImportHealthMetrics, apiImportHealthMetricsFromImage } from '../../config/api'
+import { apiSubmitCheckin, apiImportHealthMetrics, apiImportHealthMetricsFromImage, apiSubmitManualHealthMetric, apiGetMyHealthMetrics } from '../../config/api'
 import * as XLSX from 'xlsx'
 
 const slide = {
@@ -172,6 +172,17 @@ export default function AthleteOnboarding({ onComplete }) {
   const [imageImportCount, setImageImportCount] = useState(0)
   const [imageImportErrors, setImageImportErrors] = useState([])
   const imageInputRef = useRef(null)
+
+  // Manual entry state
+  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0])
+  const [manualMetric, setManualMetric] = useState('hrv')
+  const [manualValue, setManualValue] = useState('')
+  const [manualSubmitting, setManualSubmitting] = useState(false)
+  const [manualErrors, setManualErrors] = useState([])
+  const [manualSuccess, setManualSuccess] = useState('')
+  const [manualHistory, setManualHistory] = useState([])
+  const [manualHistoryLoading, setManualHistoryLoading] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
 
   const navigate = useNavigate()
 
@@ -381,6 +392,74 @@ export default function AthleteOnboarding({ onComplete }) {
     setStep('checkin')
   }
 
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  const fetchManualHistory = useCallback(async () => {
+    if (!user?.id) return
+    setManualHistoryLoading(true)
+    try {
+      const res = await apiGetMyHealthMetrics({ limit: 30 })
+      if (res.success) {
+        setManualHistory(res.metrics || [])
+      }
+    } catch (err) {
+      // silent fail for history
+    } finally {
+      setManualHistoryLoading(false)
+    }
+  }, [user?.id])
+
+  const validateManualForm = () => {
+    const errors = []
+    if (!manualDate) {
+      errors.push('Please select a date.')
+    } else if (manualDate > todayStr) {
+      errors.push('Date cannot be in the future.')
+    }
+    if (!manualMetric || !['hrv', 'rhr', 'sleepHours'].includes(manualMetric)) {
+      errors.push('Please select a valid metric.')
+    }
+    const num = Number(manualValue)
+    if (manualValue === '' || Number.isNaN(num) || num <= 0) {
+      errors.push('Value must be a positive number.')
+    }
+    return errors
+  }
+
+  const handleManualSubmit = async (e) => {
+    e.preventDefault()
+    setManualErrors([])
+    setManualSuccess('')
+    const errors = validateManualForm()
+    if (errors.length > 0) {
+      setManualErrors(errors)
+      return
+    }
+    setManualSubmitting(true)
+    try {
+      await apiSubmitManualHealthMetric({
+        date: manualDate,
+        metricType: manualMetric,
+        value: Number(manualValue),
+      })
+      setManualSuccess('Saved successfully.')
+      setManualValue('')
+      fetchManualHistory()
+    } catch (err) {
+      setManualErrors([err.message || 'Failed to save. Please try again.'])
+    } finally {
+      setManualSubmitting(false)
+    }
+  }
+
+  const toggleHistory = () => {
+    const next = !showHistory
+    setShowHistory(next)
+    if (next && manualHistory.length === 0) {
+      fetchManualHistory()
+    }
+  }
+
   const handleSaveCheckin = async () => {
     setCheckinSaving(true)
     setCheckinError('')
@@ -526,11 +605,11 @@ export default function AthleteOnboarding({ onComplete }) {
           {!ENABLE_APPLE_HEALTH && step === 'import' && (
             <motion.div key="import" variants={slide} initial="initial" animate="animate" exit="exit" className="glass-card p-8 text-center">
               <div className="w-20 h-20 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center mx-auto mb-5">
-                {importMode === 'screenshot' ? <Camera size={36} className="text-accent-blue" /> : <FileSpreadsheet size={36} className="text-accent-blue" />}
+                {importMode === 'screenshot' ? <Camera size={36} className="text-accent-blue" /> : importMode === 'manual' ? <Pencil size={36} className="text-accent-blue" /> : <FileSpreadsheet size={36} className="text-accent-blue" />}
               </div>
               <h2 className="text-xl font-bold text-pivot-900 dark:text-white mb-2">Import Your Health Data</h2>
               <p className="text-sm text-pivot-500 dark:text-slate-400 mb-6 leading-relaxed">
-                Upload a spreadsheet or take a screenshot of your wearable/fitness app. Pivot will read the numbers and save them for you.
+                Upload a spreadsheet, take a screenshot, or enter one value at a time. Pivot will save it for you.
               </p>
 
               {/* Mode toggle */}
@@ -558,6 +637,18 @@ export default function AthleteOnboarding({ onComplete }) {
                 >
                   <Camera size={14} />
                   Screenshot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportMode('manual')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    importMode === 'manual'
+                      ? 'bg-white dark:bg-slate-700 text-accent-blue shadow-sm'
+                      : 'text-pivot-500 dark:text-slate-400 hover:text-pivot-700 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Pencil size={14} />
+                  Manual
                 </button>
               </div>
 
@@ -753,23 +844,150 @@ export default function AthleteOnboarding({ onComplete }) {
                 </>
               )}
 
-              <button
-                onClick={handleContinueToCheckin}
-                disabled={
-                  (importMode === 'spreadsheet' && (!imported || importUploading)) ||
-                  (importMode === 'screenshot' && (imageParsing || imageImporting))
-                }
-                className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {importUploading || imageImporting ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    {imageImporting ? 'Saving screenshot data…' : 'Uploading health data…'}
-                  </>
-                ) : (
-                  <>Continue to Check-in <ArrowRight size={16} /></>
-                )}
-              </button>
+              {importMode === 'manual' && (
+                <>
+                  <form onSubmit={handleManualSubmit} className="text-left mb-5 space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Date</label>
+                      <input
+                        type="date"
+                        value={manualDate}
+                        max={todayStr}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                      />
+                      <p className="text-[10px] text-pivot-400 mt-1">You can only select today or earlier dates.</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Metric</label>
+                      <select
+                        value={manualMetric}
+                        onChange={(e) => setManualMetric(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                      >
+                        <option value="hrv">HRV (ms)</option>
+                        <option value="rhr">Resting Heart Rate (bpm)</option>
+                        <option value="sleepHours">Sleep (hours)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-pivot-600 dark:text-slate-300 mb-1.5">Value</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        value={manualValue}
+                        onChange={(e) => setManualValue(e.target.value)}
+                        placeholder={`Enter ${manualMetric === 'hrv' ? 'HRV' : manualMetric === 'rhr' ? 'RHR' : 'sleep hours'}`}
+                        className="w-full px-3 py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-pivot-900 dark:text-white placeholder-pivot-400 focus:ring-2 focus:ring-accent-blue/40 focus:outline-none"
+                      />
+                    </div>
+
+                    {manualErrors.length > 0 && (
+                      <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
+                        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {manualErrors.map((e, i) => <li key={i}>{e}</li>)}
+                        </ul>
+                      </div>
+                    )}
+
+                    {manualSuccess && (
+                      <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
+                        <CheckCircle2 size={16} />
+                        {manualSuccess}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={manualSubmitting}
+                      className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
+                    >
+                      {manualSubmitting ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Saving…
+                        </>
+                      ) : (
+                        <>Save Entry <CheckCircle2 size={16} /></>
+                      )}
+                    </button>
+                  </form>
+
+                  <button
+                    type="button"
+                    onClick={toggleHistory}
+                    className="w-full py-2.5 rounded-xl border border-pivot-200 dark:border-slate-600 text-xs font-semibold text-pivot-600 dark:text-slate-300 hover:bg-pivot-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center gap-2 mb-4"
+                  >
+                    <History size={14} />
+                    {showHistory ? 'Hide history' : 'View history'}
+                  </button>
+
+                  {showHistory && (
+                    <div className="mb-5 rounded-xl border border-pivot-200 dark:border-slate-600 overflow-hidden bg-pivot-50 dark:bg-slate-800/50 text-left">
+                      <div className="px-4 py-3 bg-pivot-100 dark:bg-slate-700 border-b border-pivot-200 dark:border-slate-600">
+                        <div className="flex items-center gap-1.5 font-semibold text-pivot-700 dark:text-slate-200 text-xs">
+                          <History size={14} /> Recent entries
+                        </div>
+                      </div>
+                      {manualHistoryLoading ? (
+                        <div className="p-4 text-center text-xs text-pivot-500">
+                          <span className="w-4 h-4 border-2 border-pivot-300 border-t-accent-blue rounded-full animate-spin inline-block mr-2" />
+                          Loading…
+                        </div>
+                      ) : manualHistory.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-pivot-500">No entries yet.</div>
+                      ) : (
+                        <div className="max-h-48 overflow-y-auto">
+                          <table className="w-full text-[10px]">
+                            <thead className="sticky top-0 bg-pivot-100 dark:bg-slate-700 text-pivot-600 dark:text-slate-300">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-semibold">Date</th>
+                                <th className="px-3 py-2 text-right font-semibold">HRV</th>
+                                <th className="px-3 py-2 text-right font-semibold">RHR</th>
+                                <th className="px-3 py-2 text-right font-semibold">Sleep</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-pivot-700 dark:text-slate-200">
+                              {manualHistory.map((row, idx) => (
+                                <tr key={idx} className="border-t border-pivot-200 dark:border-slate-600">
+                                  <td className="px-3 py-2">{row.date}</td>
+                                  <td className="px-3 py-2 text-right">{row.hrv ?? '-'}</td>
+                                  <td className="px-3 py-2 text-right">{row.rhr ?? '-'}</td>
+                                  <td className="px-3 py-2 text-right">{row.sleepHours ?? '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {importMode !== 'manual' && (
+                <button
+                  onClick={handleContinueToCheckin}
+                  disabled={
+                    (importMode === 'spreadsheet' && (!imported || importUploading)) ||
+                    (importMode === 'screenshot' && (imageParsing || imageImporting))
+                  }
+                  className="w-full py-3 rounded-xl bg-accent-blue text-white font-semibold text-sm hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {importUploading || imageImporting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      {imageImporting ? 'Saving screenshot data…' : 'Uploading health data…'}
+                    </>
+                  ) : (
+                    <>Continue to Check-in <ArrowRight size={16} /></>
+                  )}
+                </button>
+              )}
 
               <button
                 onClick={handleSkipImport}
